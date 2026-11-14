@@ -1,5 +1,5 @@
 """過濾規則與去重。"""
-from Research.FE import load_spike as ls
+from Research.StyleGAN.FE import load_spike as ls
 
 
 def test_filter_and_dedupe(synth_fasta):

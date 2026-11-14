@@ -1,5 +1,5 @@
 """時間切分邊界。"""
-from Research.FE.time_split import split_labels
+from Research.StyleGAN.FE.time_split import split_labels
 
 
 def test_boundaries():

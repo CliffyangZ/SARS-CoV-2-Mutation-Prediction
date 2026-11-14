@@ -1,9 +1,13 @@
 # SARS-CoV-2-Quantum
 
-## Data
+## Abstract
 
-Spike protein sequences and dataset documentation:
+## Introduction
 
-→ [`data/spike-protein/README.md`](data/spike-protein/README.md)
+新冠肺炎（COVID-19）已影響全球數百萬人 [1]。此疾病由嚴重急性呼吸道症候群冠狀病毒 2 型（SARS-CoV-2）引起，該病毒能夠快速突變，並感染不同宿主。圖 1 展示了 SARS-CoV-2 的基因組結構。其基因組長度約為 30 kb，其中棘蛋白（spike protein）編碼區域約位於 21–25 kb。棘蛋白負責與宿主細胞膜結合，也是病毒發生主要突變的區域 [2]。因此，本文認為棘蛋白區域足以作為研究此病毒的依據，並僅使用棘蛋白序列進行分析。
 
-Source: [Zenodo 10.5281/zenodo.19040165](https://doi.org/10.5281/zenodo.19040165) (NCBI Virus Spike AA archive, Oct 2021; 137,132 sequences).
+在計算生物學中，生物序列分類是一項重要任務，可協助研究人員進行功能分析，進而理解 DNA 與蛋白質等序列 [3]。研究人員已提出多種序列分類策略，以探討病毒的起源、結構與行為 [2, 4]。用於此類任務的分類模型包括傳統機器學習（machine learning, ML）方法，例如支援向量機（support vector machine, SVM）[5]，以及人工神經網路（artificial neural network, ANN）[6]。然而，這些分類模型通常要求輸入資料為固定長度的數值表示。因此，研究人員提出了多種數值嵌入生成方法，將生物序列轉換為數值形式。
+
+其中部分方法以特徵工程為基礎 [2, 7, 8]，涵蓋序列比對式與非序列比對式機制。然而，這些方法往往依賴特定領域知識，泛化能力較有限。其他方法則包括訊號轉換方法（如 Spike2Signal [9]）與影像轉換方法（如 RP [10]、GAF [10] 及 MTF [10]）。不過，這些方法需要額外的資料轉換步驟才能取得特徵，可能產生較高的計算成本。
+
+另一類嵌入生成方法使用神經網路（neural network, NN）擷取序列的嵌入表示 [11]。由於神經網路在訓練後具有較佳的泛化能力，因此可用於處理異質序列。COVID-19 疫情後累積了大量 SARS-CoV-2 資料，使採用神經網路作為特徵擷取器更具可行性。然而，為達到良好效能，這類方法通常需要以大型資料集進行大量訓練，因而帶來額外的計算負擔。

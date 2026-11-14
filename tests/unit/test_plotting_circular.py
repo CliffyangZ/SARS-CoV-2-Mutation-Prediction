@@ -1,7 +1,7 @@
 """圓形頻率圖：四段邊界與最高頻區段。"""
 import numpy as np
-from Research.utils import plotting
-from Research.utils.spike_regions import REGIONS, SEGMENTS, segment_of
+from Research.StyleGAN.utils import plotting
+from Research.StyleGAN.utils.spike_regions import REGIONS, SEGMENTS, segment_of
 
 
 def test_segments_and_plot(tmp_path):

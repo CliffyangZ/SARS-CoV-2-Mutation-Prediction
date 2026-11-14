@@ -1,6 +1,6 @@
 """保真度公式。"""
 import numpy as np
-from Research.utils.fidelity import fidelity_matrix, paper_check, summarize
+from Research.StyleGAN.utils.fidelity import fidelity_matrix, paper_check, summarize
 
 
 def test_identity_orthogonal_and_square():

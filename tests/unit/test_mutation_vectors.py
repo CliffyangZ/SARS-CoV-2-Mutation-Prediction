@@ -1,9 +1,9 @@
 """突變向量、k、lineage 代理標籤。"""
 import numpy as np
 import pandas as pd
-from Research.FE.lineage_proxy import lineage_labels
-from Research.FE.mutation_vectors import mutation_vectors, train_k
-from Research.FE.load_spike import AA
+from Research.StyleGAN.FE.lineage_proxy import lineage_labels
+from Research.StyleGAN.FE.mutation_vectors import mutation_vectors, train_k
+from Research.StyleGAN.FE.load_spike import AA
 
 
 def test_vectors_and_k():

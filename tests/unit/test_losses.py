@@ -1,7 +1,7 @@
 """式 3–10 的手算驗證。"""
 import math
 import torch
-from Research.models import losses as L
+from models.StyleGAN import losses as L
 
 
 def sp(x):
@@ -31,3 +31,17 @@ def test_gradients_flow():
     f = torch.randn(4, requires_grad=True)
     L.g_loss_rahinge(torch.randn(4), f).backward()
     assert f.grad is not None
+
+
+def test_diversity_reg():
+    """004：權重 0 回 0；輸出相同時懲罰大於輸出分散時；梯度可回傳。"""
+    z1, z2 = torch.randn(4, 8), torch.randn(4, 8)
+    same = torch.rand(4, 1, 4, 4)
+    assert L.diversity_reg(same, same, z1, z2, 0.0).item() == 0.0
+    spread = torch.rand(4, 1, 4, 4)
+    near = L.diversity_reg(same, same + 1e-3, z1, z2, 1.0)
+    far = L.diversity_reg(same, spread, z1, z2, 1.0)
+    assert near > far > 0
+    a = torch.rand(4, 1, 4, 4, requires_grad=True)
+    L.diversity_reg(a, spread, z1, z2, 1.0).backward()
+    assert a.grad is not None and torch.isfinite(a.grad).all()

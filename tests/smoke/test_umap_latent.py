@@ -1,6 +1,6 @@
 """小型資料下 Jaccard UMAP 可執行並輸出圖檔。"""
 import numpy as np
-from Research.FE import umap_latent as u
+from Research.StyleGAN.FE import umap_latent as u
 
 
 def test_umap(tmp_path):

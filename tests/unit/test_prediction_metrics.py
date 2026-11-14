@@ -1,6 +1,6 @@
 """最小 Hamming、新位置命中率、頻繁位點召回率。"""
 import numpy as np
-from Research.utils.prediction_metrics import frequent_recall, min_hamming, novel_hit_rate
+from Research.StyleGAN.utils.prediction_metrics import frequent_recall, min_hamming, novel_hit_rate
 
 
 def test_min_hamming():

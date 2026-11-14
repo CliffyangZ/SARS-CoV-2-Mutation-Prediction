@@ -1,7 +1,7 @@
 """區塊排程與淡入。"""
 import torch
-from Research.models.progressive import downscale_classical, level_alpha
-from Research.utils.config import make_config
+from models.StyleGAN.progressive import downscale_classical, level_alpha
+from Research.StyleGAN.utils.config import make_config
 
 
 def test_schedule_even_and_alpha_monotone():
@@ -18,3 +18,14 @@ def test_schedule_even_and_alpha_monotone():
 def test_downscale_is_avg_pool():
     x = torch.arange(16.).reshape(1, 1, 4, 4)
     assert downscale_classical(x, 4).item() == x.mean().item()
+
+
+def test_fade_frac_default_equals_half_and_boundaries():
+    """003：fade_frac 預設 0.5 與原行為逐步相同；0.2 時更早到 1；1.0 時整個區塊才升到 1。"""
+    sch = make_config(1, steps=3500).block_schedule
+    a, b = sch[2]
+    for st in range(a, b, 50):
+        assert level_alpha(sch, st) == level_alpha(sch, st, 0.5)
+    mid = a + (b - a) // 2
+    assert level_alpha(sch, mid, 0.2)[1] == 1.0 and level_alpha(sch, mid, 1.0)[1] < 1.0
+    assert level_alpha(sch, b - 1, 1.0)[1] > 0.99 and level_alpha(sch, a, 0.2) == (2, 0.0)

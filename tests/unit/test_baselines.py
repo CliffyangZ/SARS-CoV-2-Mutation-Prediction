@@ -1,6 +1,6 @@
 """四種基準。"""
 import numpy as np
-from Research.utils.baselines import all_baselines
+from Research.StyleGAN.utils.baselines import all_baselines
 
 
 def test_shapes_unique_and_trend_bias():

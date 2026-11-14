@@ -1,6 +1,6 @@
 """映射：訓練期背景、最常見替代殘基、已存在計數。"""
 import numpy as np
-from Research.utils.sequence_mapping import map_to_sequences, train_alt_residues
+from Research.StyleGAN.utils.sequence_mapping import map_to_sequences, train_alt_residues
 
 
 def test_alt_and_mapping():

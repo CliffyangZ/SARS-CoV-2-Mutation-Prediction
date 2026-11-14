@@ -1,6 +1,6 @@
 """穩定性指標在合成曲線上的行為。"""
 import numpy as np
-from Research.utils.stability import convergence_step, late_std, spike_count
+from Research.StyleGAN.utils.stability import convergence_step, late_std, spike_count
 
 
 def test_oscillating_vs_converging():
