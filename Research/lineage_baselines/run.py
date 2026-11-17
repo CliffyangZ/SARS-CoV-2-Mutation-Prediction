@@ -57,6 +57,8 @@ def build_parser():
     p.add_argument("--ae-epochs", type=int, default=None, help="覆寫自編碼器輪數（預設 100；測試用）")
     p.add_argument("--pretrained", action=argparse.BooleanOptionalAction, default=True,
                    help="ResNet34 載入 ImageNet 預訓練權重（預設開；使用者已同意下載）")
+    p.add_argument("--signal-mode", choices=["raw", "cumsum"], default="raw",
+                   help="深度模型的訊號：raw（預設）或 cumsum（累積後重新縮放）；請搭配不同的 --out，避免與 raw 結果混在一起")
     p.add_argument("--stop-after", type=int, default=None, help="訓練到第 N 輪就停（量測單輪耗時或測試用）")
     return p
 
@@ -105,6 +107,11 @@ def main(argv=None):
     for model, rep, seed in runs:
         path = R.result_path(out, model, rep, seed)
         deep = group_of(model) != "classical"
+        if deep and path.exists():
+            prev = R.read_signal_mode(path)
+            if prev != args.signal_mode:
+                print(f"{path.name} 已存在且訊號模式為 {prev}，與 --signal-mode {args.signal_mode} 不同；請改用另一個 --out", file=sys.stderr)
+                return 2
         if R.is_complete(path, min_version=2 if deep else None):
             print(f"跳過（已完成）：{path.name}")
             continue

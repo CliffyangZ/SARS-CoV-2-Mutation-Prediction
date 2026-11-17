@@ -22,6 +22,14 @@ def is_complete(path, min_version=None):
         return False
 
 
+def read_signal_mode(path):
+    """讀取結果檔記錄的訊號模式；舊結果沒有此欄位，視為 raw。"""
+    try:
+        return json.loads(Path(path).read_text()).get("hyperparameters", {}).get("signal_mode", "raw")
+    except (json.JSONDecodeError, OSError):
+        return "raw"
+
+
 def write_result(path, result):
     """原子寫入結果檔（先寫暫存檔再改名，避免中斷造成半個檔案）。"""
     path = Path(path)

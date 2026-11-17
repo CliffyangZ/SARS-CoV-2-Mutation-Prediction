@@ -35,3 +35,47 @@ cd ~/Project/SARS-CoV-2-Quantum
 /home/cliffyang/miniconda3/envs/qml_env/bin/python -u -m Research.lineage_baselines.run \
   --data Data/spike-lineage/dataset_v2.tsv --out Results/lineage_baselines_v2 \
   --model mwdn --seeds 2
+
+---
+# 與 cumsum 目錄相同設定：image 組、cnn3/cnn4 × rp/gaf/mtf、signal_mode=cumsum
+# 建議種子可先 seed0，或補 0 1 2
+
+OUT=Results/lineage_baselines_cumsum_v2
+DATA=Data/spike-lineage/dataset_v2.tsv
+
+for rep in rp gaf mtf; do
+  python -u -m Research.lineage_baselines.run \
+    --data "$DATA" \
+    --out "$OUT" \
+    --group image \
+    --representation "$rep" \
+    --signal-mode cumsum \
+    --seeds 0
+done
+
+cd ~/Project/SARS-CoV-2-Quantum
+
+---
+
+OUT=Results/lineage_baselines_cumsum_v2
+DATA=Data/spike-lineage/dataset_v2.tsv
+LOG="$OUT/train.log"
+mkdir -p "$OUT"
+
+nohup bash -c '
+  for rep in rp gaf mtf; do
+    echo "===== $(date -Is) START $rep ====="
+    python -u -m Research.lineage_baselines.run \
+      --data "'"$DATA"'" \
+      --out "'"$OUT"'" \
+      --group image \
+      --representation "$rep" \
+      --signal-mode cumsum \
+      --seeds 0
+    echo "===== $(date -Is) DONE $rep ====="
+  done
+  echo "ALLDONE $(date -Is)"
+' >> "$LOG" 2>&1 &
+
+echo "PID=$!  log=$LOG"
+disown

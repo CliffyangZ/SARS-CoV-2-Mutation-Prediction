@@ -72,3 +72,36 @@ def test_optional_pyts_reference():
     s = _sig(b=1, n=40)
     ref = pyts.RecurrencePlot(dimension=1, time_delay=1, threshold=None).transform(s.numpy())[0]
     assert np.allclose(T.rp_matrix(s)[0].numpy(), ref, atol=1e-5)
+
+
+def test_signal_mode_cumsum():
+    """cumsum 模式：範圍為 [-1, 1]、保持形狀、為去均值累積和的線性重新縮放；raw 不變；未知模式報錯。"""
+    import pytest
+
+    ids = torch.randint(0, 21, (3, 50), dtype=torch.int8)
+    raw = T.signal_from_ids(ids)
+    assert torch.equal(T.apply_signal_mode(raw, "raw"), raw)
+    c = T.apply_signal_mode(raw, "cumsum")
+    assert c.shape == raw.shape
+    assert torch.allclose(c.min(1).values, torch.full((3,), -1.0), atol=1e-5)
+    assert torch.allclose(c.max(1).values, torch.full((3,), 1.0), atol=1e-5)
+    cs = torch.cumsum(raw - raw.mean(1, keepdim=True), 1)  # 去均值後累積
+    expect = 2 * (cs - cs.min(1, keepdim=True).values) / (cs.max(1, keepdim=True).values - cs.min(1, keepdim=True).values) - 1
+    assert torch.allclose(c, expect, atol=1e-5)  # 只是累積和的線性重新縮放
+    with pytest.raises(ValueError):
+        T.apply_signal_mode(raw, "nope")
+    flat = T.apply_signal_mode(torch.zeros(1, 5), "cumsum")  # 常數訊號不應產生 NaN
+    assert torch.isfinite(flat).all()
+
+
+def test_pyts_reference_gaf_and_mtf():
+    """GAF 與 MTF（均勻分箱）和 pyts 一致（沒有 pyts 就略過）。以 cumsum 訊號比對，避免分箱邊界上的離散值差異。"""
+    import pytest
+
+    pyts = pytest.importorskip("pyts.image")
+    ids = torch.randint(0, 21, (1, 200), dtype=torch.int8)
+    s = T.apply_signal_mode(T.signal_from_ids(ids), "cumsum")
+    ref = pyts.GramianAngularField(method="summation").transform(s.numpy())[0]
+    assert abs(ref - T.gaf_matrix(s)[0].numpy()).max() < 1e-5
+    ref = pyts.MarkovTransitionField(n_bins=T.MTF_BINS, strategy="uniform").transform(s.numpy())[0]
+    assert abs(ref - T.mtf_matrix(s)[0].numpy()).max() < 1e-5

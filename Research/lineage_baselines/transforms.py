@@ -20,6 +20,24 @@ def signal_from_ids(ids):
     return ids.float() / (len(ALPHABET) - 1) * 2.0 - 1.0
 
 
+SIGNAL_MODES = ("raw", "cumsum")
+
+
+def apply_signal_mode(sig, mode="raw"):
+    """訊號後處理。raw：不變（預設，與既有結果一致）；cumsum：先減去每條序列的平均、沿序列累積（零均值隨機漫步），再逐條重新縮放到 [-1, 1]。
+
+    cumsum 是自行加入的選項（論文未說明 Spike2Signal 是否累積，provenance 為 chosen）。
+    累積和可逆，資訊量不變，但訊號變平滑，影像出現大尺度結構。
+    """
+    if mode == "raw":
+        return sig
+    if mode != "cumsum":
+        raise ValueError(f"未知訊號模式：{mode}，可用：{SIGNAL_MODES}")
+    c = torch.cumsum(sig - sig.mean(dim=1, keepdim=True), dim=1)  # 去均值：避免單調漂移，圖形才有論文的交叉結構
+    c = c - c.min(dim=1, keepdim=True).values
+    return 2.0 * c / c.max(dim=1, keepdim=True).values.clamp_min(1e-12) - 1.0
+
+
 def rp_matrix(x):
     """Recurrence Plot 的距離矩陣（m=1、τ=1）：|x_i - x_j|，形狀 (B, L, L)。"""
     return (x[:, :, None] - x[:, None, :]).abs()
