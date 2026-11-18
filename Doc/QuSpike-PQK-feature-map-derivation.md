@@ -146,25 +146,37 @@ $$
 一階 Trotter 的標準上界（Lloyd 1996；Childs et al. 2021）：
 
 $$
-\big\|U_T(z)-e^{-i\tau H(z)}\big\|\le\frac{\tau^2}{2T}\sum_{a<b}\big\|[H_a,H_b]\big\| ,
+\left\lVert U_T(z)-e^{-i\tau H(z)}\right\rVert \le \frac{\tau^{2}}{2T}\sum_{a<b}\left\lVert \left[H_a,\,H_b\right]\right\rVert
 $$
 
-其中 $H=\sum_aH_a$ 為各項（每個場與每個耦合算一項）。
+其中 $H=\sum_a H_a$，每個場與每個耦合各算一項。
 
-推導重點：一步的誤差 $\|e^{-i\Delta H_b}e^{-i\Delta H_a}-e^{-i\Delta(H_a+H_b)}\|\le\tfrac{\Delta^2}{2}\|[H_a,H_b]\|$，$T$ 步累加後 $T\cdot\Delta^2=\tau^2/T$。
-
-套用到本模型：$|z|\le\pi/2$ 時各項範數為 $O(1)$；每一項只和 $O(1)$ 個相鄰項不對易（場項只和含該位元的兩條邊不對易，耦合項只和共用位元的耦合與兩端場不對易）。所以非零交換子共 $O(n)$ 個，
+推導重點：兩項 $H_a$、$H_b$ 的一步誤差為
 
 $$
-\big\|U_T-e^{-i\tau H}\big\|=O\!\left(\frac{n\tau^2}{T}\right).
+\left\lVert e^{-i\Delta H_b}\,e^{-i\Delta H_a}-e^{-i\Delta (H_a+H_b)}\right\rVert \le \frac{\Delta^{2}}{2}\left\lVert \left[H_a,\,H_b\right]\right\rVert
 $$
 
-**實測**（$n=3$、$\tau=0.7$，40 組隨機 $z$ 的平均）：讀出各分量的最大偏差 $\max_i|\phi_i-\phi_{\mathrm{exact},i}|$ 隨 $T$ 按 $1/T$ 下降。
+$T$ 步累加後，$T\Delta^{2}=\tau^{2}/T$，即得上式。
 
-| $T$ | 最大偏差 |
+套用到本模型：當 $\lvert z\rvert\le\pi/2$ 時，各項的範數為 $O(1)$。每一項只和 $O(1)$ 個相鄰項不對易：場項只和含該位元的兩條邊不對易，耦合項只和共用位元的耦合與兩端的場不對易。所以非零的交換子共 $O(n)$ 個，
+
+$$
+\left\lVert U_T-e^{-i\tau H}\right\rVert = O\!\left(\frac{n\,\tau^{2}}{T}\right)
+$$
+
+**實測**（$n=3$、$\tau=0.7$，40 組隨機 $z$ 的平均）：讀出各分量的最大偏差
+
+$$
+\max_i \left\lvert \phi_i-\phi_i^{\mathrm{exact}}\right\rvert
+$$
+
+隨 $T$ 按 $1/T$ 下降。
+
+| T | 最大偏差 |
 |---|---|
-| 4 | $1.93\times10^{-1}$ |
-| 256 | $3.05\times10^{-3}$ |
+| 4 | $1.93\times 10^{-1}$ |
+| 256 | $3.05\times 10^{-3}$ |
 
 對數座標斜率 $-0.997$，與一階 $1/T$ 一致。
 
