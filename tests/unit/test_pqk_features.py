@@ -114,3 +114,61 @@ def test_projection_clip_bounds_from_train(fs):
     p = F.fit_projection(fs, g, n_qubits=2)
     assert p.clip_lo.shape == (p.n_components,) and p.clip_hi.shape == (p.n_components,)
     assert np.all(p.clip_lo < p.clip_hi)
+
+
+# --- Projection.transform / supplement（008 Foundational、US2）---
+
+def _delta_group(fs):
+    return [g for g in F.make_groups(fs) if g.name == "delta"][0]
+
+
+def test_transform_matches_stored_projection(fs):
+    """transform 對訓練列／群內測試列的輸出與 fit_projection 儲存的一致（任意列投影）。"""
+    g = _delta_group(fs)
+    pr = F.fit_projection(fs, g, 4)
+    np.testing.assert_allclose(pr.transform(fs.x_train[g.train_idx[:200]]), pr.z_train[:200], atol=1e-12)
+    np.testing.assert_allclose(pr.transform(fs.x_test[g.test_idx[:200]]), pr.z_test[:200], atol=1e-12)
+
+
+def test_transform_arbitrary_rows_in_range(fs):
+    """對任意（非該群）列投影：形狀 (n, 2n)、值域在 [−π/2, π/2]。"""
+    g = _delta_group(fs)
+    pr = F.fit_projection(fs, g, 4)
+    z = pr.transform(fs.x_test[:300])
+    assert z.shape == (300, 8)
+    assert z.min() >= -np.pi / 2 - 1e-9 and z.max() <= np.pi / 2 + 1e-9
+
+
+def test_zero_supplement_leaves_qubit_decoupled(fs):
+    """delta 群 k=6<8：零填補使位元 3 解耦（論文 Q4）。"""
+    g = _delta_group(fs)
+    pr = F.fit_projection(fs, g, 4, supplement="zero")
+    assert pr.n_padded == 2
+    assert F.decoupled_qubits(pr.z_train, 4) == [3]
+
+
+def test_pls_supplement_removes_decoupling(fs):
+    """PLS 補維後無解耦位元；transform 與儲存值一致。"""
+    g = _delta_group(fs)
+    pr = F.fit_projection(fs, g, 4, supplement="pls")
+    assert pr.supplement == "pls" and pr.n_supplement == 2 and pr.n_padded == 0
+    assert F.decoupled_qubits(pr.z_train, 4) == []
+    np.testing.assert_allclose(pr.transform(fs.x_train[g.train_idx[:100]]), pr.z_train[:100], atol=1e-9)
+
+
+def test_pls_supplement_fitted_on_train_only(fs):
+    """補充維度只用訓練列擬合：換掉測試列不影響訓練列的投影。"""
+    g = _delta_group(fs)
+    a = F.fit_projection(fs, g, 4, supplement="pls")
+    fs2 = F.FeatureSet(**{**fs.__dict__, "x_test": fs.x_test[::-1].copy(), "y_test": fs.y_test[::-1].copy()})
+    g2 = F.make_groups(fs2)
+    g2 = [x for x in g2 if x.name == "delta"][0]
+    b = F.fit_projection(fs2, g2, 4, supplement="pls")
+    np.testing.assert_allclose(a.z_train, b.z_train, atol=1e-9)
+
+
+def test_b1_supplement_pads_one_dim(fs):
+    """b1 群 4 類 → k=3，n=2 時寬度 4，補 1 維（PLS）。"""
+    g = [x for x in F.make_groups(fs) if x.name == "b1"][0]
+    pr = F.fit_projection(fs, g, 2, supplement="pls")
+    assert pr.n_components == 3 and pr.n_supplement == 1 and pr.n_padded == 0

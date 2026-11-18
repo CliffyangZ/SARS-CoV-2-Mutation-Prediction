@@ -59,7 +59,12 @@ def test_reference_beats_majority(small):
 
 
 def test_others_group_predictions_identical_to_reference(small):
-    """SC-004：易分群（others）的預測與 C0 逐筆完全相同。"""
+    """SC-004（008 改述）：**被路由到** others 的列，預測與 C0 逐筆完全相同。
+
+    007 的版本以「真實標籤屬於 others」選列——那只在推論偷看標籤時才成立
+    （被誤路由到 delta 的 others 序列永遠收不到專家）。無標籤推論下，
+    保證只剩「路由到 others 的列沒有專家」。
+    """
     fs, groups = small
     cfg = dict(n_qubits={"delta": 4, "b1": 2, "all": 4}, trotter_steps=4, evolution_time=0.8,
                gamma=None, projection="lda", shots=None, noise_p=0.0, device="default.qubit")
@@ -70,13 +75,12 @@ def test_others_group_predictions_identical_to_reference(small):
         cache = Path(td)
         main_pred = pipeline.evaluate_control("MAIN", fs, groups, cfg, 0, cache, tune=False)[0]
         c0_pred = pipeline.evaluate_control("C0", fs, groups, cfg, 0, cache, tune=False)[0]
-    others = [g for g in groups if not g.is_quantum]
-    assert others, "測試前提：應有一個不走量子的群"
-    ids = np.concatenate([np.asarray(g.class_ids) for g in others])
-    mask = np.isin(fs.y_test, ids)
+        model, dev = router.fit_reference(fs.x_train, fs.y_train, len(fs.labels), seed=0)
+        routed, _ = router.route(router.logits(model, fs.x_test, dev), groups)
+    mask = routed == "others"
     assert mask.sum() > 0
     diff = int((main_pred[mask] != c0_pred[mask]).sum())
-    assert diff == 0, f"易分群有 {diff} 筆預測被量子路徑改動"
+    assert diff == 0, f"路由到 others 的列有 {diff} 筆預測被量子路徑改動"
 
 
 def test_c0_is_exactly_the_reference_line(small):

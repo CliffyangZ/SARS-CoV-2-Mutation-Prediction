@@ -45,12 +45,13 @@ def evaluate(scores, floor=NOISE_FLOOR):
         if not np.isfinite(a[0]) or not cands:
             out.append(dict(claim=claim, a=a_name, b="|".join(b_names), delta=float("nan"),
                             std_a=a[1], std_b=float("nan"), noise_floor=floor,
-                            verdict="insufficient_data"))
+                            floor_source="delta", verdict="insufficient_data"))
             continue
         b_name, b = max(cands, key=lambda kv: kv[1][0])  # kv[1][0] 為該對照組的平均
         d, v = verdict(a, b, floor)
+        src = "seed_variance" if max(a[1], b[1]) > floor else "delta"
         out.append(dict(claim=claim, a=a_name, b=b_name, delta=d,
-                        std_a=a[1], std_b=b[1], noise_floor=floor, verdict=v))
+                        std_a=a[1], std_b=b[1], noise_floor=floor, floor_source=src, verdict=v))
     return out
 
 

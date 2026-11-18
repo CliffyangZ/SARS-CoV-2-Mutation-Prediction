@@ -27,9 +27,19 @@ def rbf(a, b=None, gamma=1.0):
 
 
 def ensure_psd(k, tol=1e-8):
-    """檢查並修正半正定性（FR-015）。回傳 (修正後的核, 診斷字典)。"""
+    """檢查並修正半正定性（FR-015）。回傳 (修正後的核, 診斷字典)。
+
+    先用 Cholesky 檢查 K + tol·I 是否正定：成功 ⇔ 最小特徵值 > −tol（與舊版的判定準則等價），
+    成本約為完整特徵分解的 1/10（008 Q7）。失敗才走特徵分解、截斷負特徵值並重新正規化——
+    修正一律記錄在診斷中，不得靜默。
+    """
     km = np.asarray(k, np.float64)
     km = 0.5 * (km + km.T)
+    try:
+        np.linalg.cholesky(km + tol * np.eye(len(km)))
+        return np.asarray(k, np.float32), {"psd_violation": False, "psd_correction": None}
+    except np.linalg.LinAlgError:
+        pass
     ev, vec = np.linalg.eigh(km)
     if ev.min() >= -tol:
         return np.asarray(k, np.float32), {"psd_violation": False, "psd_correction": None}
@@ -53,28 +63,31 @@ def diagnostics(k):
     return {"offdiag_mean": float(off.mean()), "offdiag_std": float(off.std())}
 
 
-def rff_surrogate(z_train, z_eval, n_features, seed=0, evolution_time=0.8, trotter_steps=4):
-    """對照組 C2：古典隨機傅立葉特徵替身。
+class RFFMap:
+    """隨機傅立葉特徵映射（可對任意列求值，供推論時對所有評估列計算）。
 
-    頻率取自 Trotter 演化可達的尺度（2·τ 為單位元項的總角度係數，見 pqk 的閉式解），
-    以 cos／sin 成對填滿 n_features 維，使輸出有界於 [−1,1] 且維度與量子讀出一致。
+    頻率取自 Trotter 演化可達的尺度（2·τ），cos／sin 成對填滿 n_features 維。
+    抽樣順序為先 w 後 b，與舊版 `rff_surrogate` 完全一致，故相同種子輸出逐元相同。
     """
-    rng = np.random.default_rng(int(seed))
-    x_tr = np.asarray(z_train, np.float64)
-    x_ev = np.asarray(z_eval, np.float64)
-    d = x_tr.shape[1]
-    half = (int(n_features) + 1) // 2
-    scale = 2.0 * float(evolution_time)
-    w = rng.normal(0.0, scale, size=(d, half))
-    b = rng.uniform(0.0, 2 * np.pi, size=half)
 
-    def feat(x):
-        """隨機傅立葉特徵：cos／sin 成對，輸出有界於 [−1,1]。"""
-        p = x @ w + b
+    def __init__(self, d, n_features, seed=0, evolution_time=0.8):
+        rng = np.random.default_rng(int(seed))
+        self.n_features = int(n_features)
+        half = (self.n_features + 1) // 2
+        self.w = rng.normal(0.0, 2.0 * float(evolution_time), size=(int(d), half))
+        self.b = rng.uniform(0.0, 2 * np.pi, size=half)
+
+    def __call__(self, x):
+        """cos／sin 成對，輸出有界於 [−1,1]。"""
+        p = np.asarray(x, np.float64) @ self.w + self.b
         out = np.concatenate([np.cos(p), np.sin(p)], axis=1)
-        return out[:, :int(n_features)].astype(np.float64)
+        return out[:, :self.n_features].astype(np.float64)
 
-    return feat(x_tr), feat(x_ev)
+
+def rff_surrogate(z_train, z_eval, n_features, seed=0, evolution_time=0.8, trotter_steps=4):
+    """對照組 C2：古典隨機傅立葉特徵替身。回傳 (訓練特徵, 評估特徵)。"""
+    m = RFFMap(np.asarray(z_train).shape[1], n_features, seed=seed, evolution_time=evolution_time)
+    return m(z_train), m(z_eval)
 
 
 def nystrom_kernel(phi_train, phi_eval, gamma, m=2048, seed=0):
@@ -91,3 +104,76 @@ def nystrom_kernel(phi_train, phi_eval, gamma, m=2048, seed=0):
     k_ev = rbf(phi_eval, land, gamma).astype(np.float64)
     k_tr = rbf(x, land, gamma).astype(np.float64)
     return (k_ev @ inv @ k_tr.T).astype(np.float32)
+
+
+class NystromMap:
+    """顯式 Nyström 特徵映射（US4，研究 D8）：Φ(x) = K(x, 地標) · U Λ^{-1/2}。
+
+    與舊 `nystrom_kernel` 的差別：舊版仍會算出完整的 N×N 近似核，沒有真的省記憶體；
+    本版只產生 (N, m') 的特徵，後接線性 SVM，時間與記憶體都是 O(N·m)。
+    地標抽樣只依 seed，不依資料標籤。
+    """
+
+    def __init__(self, phi_train, gamma, m=512, seed=0):
+        x = np.asarray(phi_train, np.float64)
+        n = len(x)
+        m = int(min(m, n))
+        idx = np.random.default_rng(int(seed)).permutation(n)[:m]
+        self.land = x[idx]
+        self.gamma = float(gamma)
+        kmm = rbf(self.land, self.land, gamma).astype(np.float64)
+        ev, vec = np.linalg.eigh(0.5 * (kmm + kmm.T))
+        keep = ev > 1e-10
+        self.proj = vec[:, keep] / np.sqrt(ev[keep])
+        self.m = m
+
+    def transform(self, phi):
+        """對任意列求特徵，形狀 (n, m')。"""
+        k = rbf(phi, self.land, self.gamma).astype(np.float64)
+        return k @ self.proj
+
+
+def nystrom_features(phi_train, phi_eval, gamma, m=512, seed=0):
+    """回傳 (訓練特徵, 評估特徵)。"""
+    mp = NystromMap(phi_train, gamma, m=m, seed=seed)
+    return mp.transform(phi_train), mp.transform(phi_eval)
+
+
+def phi_digest(phi):
+    """φ 內容的短雜湊，供 Gram 快取當鍵（φ 與種子無關，故跨種子命中）。"""
+    import hashlib
+
+    return hashlib.blake2b(np.ascontiguousarray(phi, np.float64).tobytes(), digest_size=10).hexdigest()
+
+
+GRAM_CACHE_MAX_N = 10000  # 單一 Gram 最大約 400 MB；更大者不落地（磁碟有限）
+
+
+def gram_cached(phi, gamma, cache_dir=None):
+    """精確 RBF Gram（已做半正定檢查）。回傳 (K, psd 診斷, 是否命中快取)。
+
+    γ（中位數啟發式，固定 rng）與 φ 都與種子無關，所以 5 個種子只需算一次 Gram 與 O(N³) 的特徵分解
+    （FR-017）。cache_dir=None 時不快取。
+    """
+    import json
+    from pathlib import Path
+
+    if cache_dir is not None:
+        d = Path(cache_dir) / "gram"
+        key = f"{phi_digest(phi)}_{float(gamma):.8g}"
+        kp, jp = d / f"{key}.npy", d / f"{key}.json"
+        if kp.exists() and jp.exists():
+            try:
+                return np.load(kp), json.loads(jp.read_text()), True
+            except Exception:
+                pass
+    k, psd = ensure_psd(rbf(phi, None, gamma))
+    if cache_dir is not None and len(k) <= GRAM_CACHE_MAX_N:
+        import os
+
+        d.mkdir(parents=True, exist_ok=True)
+        tmp = d / f".{key}.{os.getpid()}.npy"   # 原子寫入：多個種子行程可能同時算同一份 Gram
+        np.save(tmp, k)
+        jp.write_text(json.dumps(psd))
+        os.replace(tmp, kp)
+    return k, psd, False

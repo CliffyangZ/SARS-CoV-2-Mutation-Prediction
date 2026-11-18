@@ -54,7 +54,7 @@ def test_evaluate_returns_four_claims():
     recs = C.evaluate(s)
     assert len(recs) == 4
     for r in recs:
-        assert set(r) == {"claim", "a", "b", "delta", "std_a", "std_b", "noise_floor", "verdict"}
+        assert set(r) == {"claim", "a", "b", "delta", "std_a", "std_b", "noise_floor", "floor_source", "verdict"}
         assert np.isfinite(r["delta"])
 
 

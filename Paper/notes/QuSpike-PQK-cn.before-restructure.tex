@@ -1,0 +1,796 @@
+% !TEX program = xelatex
+\documentclass[10pt,a4paper]{article}
+\usepackage[top=1.25cm,bottom=1.2cm,left=1.55cm,right=1.55cm]{geometry}
+\usepackage{wrapfig}
+\usepackage{xeCJK}
+% Linux：用本機 Noto CJK（Songti/PingFang 為 macOS 字型，此環境沒有）
+\xeCJKsetup{AutoFakeSlant=true}
+\setCJKmainfont{Noto Serif CJK TC}
+\setCJKsansfont{Noto Sans CJK TC}
+\setCJKmonofont{Noto Sans Mono CJK TC}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage[table]{xcolor}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{tabularx}
+\usepackage{placeins}
+\usepackage{microtype}
+\usepackage{xurl}
+\usepackage{enumitem}
+\usepackage{tikz}
+\usepackage{quantikz}
+\usetikzlibrary{arrows.meta,positioning,fit}
+\usepackage[hidelinks]{hyperref}
+\urlstyle{tt}
+
+\setlength{\emergencystretch}{1em}
+\setlength{\parindent}{2em}
+\linespread{0.86}
+\setlength{\abovedisplayskip}{3pt plus 1pt minus 1pt}\setlength{\belowdisplayskip}{3pt plus 1pt minus 1pt}
+\setlength{\abovedisplayshortskip}{2pt plus 1pt}\setlength{\belowdisplayshortskip}{2pt plus 1pt}
+\setlength{\intextsep}{3pt plus 1pt minus 1pt}
+\setlength{\textfloatsep}{6pt plus 2pt minus 2pt}
+\setlength{\floatsep}{5pt plus 2pt minus 2pt}
+\setlength{\abovecaptionskip}{2pt}
+\setlength{\belowcaptionskip}{0pt}
+\setlength{\columnsep}{8pt}
+\setlist{itemsep=1pt, topsep=2pt, parsep=0pt, partopsep=0pt}
+\usepackage[compact]{titlesec}
+\renewcommand{\refname}{參考文獻}
+\renewcommand{\abstractname}{摘要}
+\renewcommand{\figurename}{圖}
+\renewcommand{\tablename}{表}
+\renewcommand{\contentsname}{目錄}
+\renewcommand{\thesection}{\arabic{section}}
+\renewcommand{\thesubsection}{\thesection.\arabic{subsection}}
+\newcommand{\algname}{演算法}
+
+\hypersetup{
+    pdftitle={QuSpike-PQK：用於 SARS-CoV-2 Spike 譜系分類的投影量子核專家模型},
+    pdfauthor={Sin-Ze Yang}
+}
+
+\title{QuSpike-PQK：用於 SARS-CoV-2 Spike 譜系分類的\\投影量子核專家模型}
+\author{Sin-Ze Yang}
+\date{}
+
+\begin{document}
+\raggedbottom
+\maketitle
+
+\begin{abstract}
+本文提出 QuSpike-PQK，一種用於將 SARS-CoV-2 spike 胺基酸序列分類至 Pango 譜系的投影量子核（projected quantum kernel, PQK）架構，並檢驗其量子元件相較於配對的古典替代方案是否具有額外貢獻。序列以相對於 Wuhan-Hu-1 的二元突變指示向量編碼，由線性參考分類器評分並路由至譜系群組；對兩組親緣關係相近的譜系，先經群組內判別投影，再輸入無參數、經 Trotter 分解的 Heisenberg 型哈密頓量演化，以單量子位元約化密度矩陣構成投影量子核，並由核支持向量機專家對參考 logits 加上殘差修正。此設計使參考分類器成為結構性下界，且每個量子元件皆配有古典對應物。在來自 22 個譜系的 31,689 條唯一序列上（時間順序切分為 22,175／9,514 條訓練／測試），QuSpike-PQK 的測試 macro-F1 為 \textbf{0.7547}、準確率 \textbf{0.6893}、ROC AUC \textbf{0.9745}，在同一 22 類任務上全部超越古典基線（最佳為 one-hot 邏輯迴歸，macro-F1 0.7339）與影像 CNN 基線（最佳為四層 CNN 搭配遞迴圖，macro-F1 0.6787），macro-F1 分別高出 $+0.021$ 與 $+0.076$，且訓練僅需 3.09 分鐘，約為最佳 CNN 的 1/29。然而，此領先主要來自突變指示表徵與線性參考分類器（macro-F1 0.7481），量子元件僅貢獻 $+0.0066$；所有預先註冊的比較皆落在 0.02 的雜訊下限內：移除糾纏使 macro-F1 變化 0.0003，古典隨機傅立葉特徵替代模型得分 0.7552。因此在此任務上，量子特徵映射可被古典方法取代，本文不主張量子優勢或加速：電路僅需至多 4 個量子位元，可由古典電腦精確模擬（量子特徵耗時 0.37~s，核 SVM 則需 185--576~s），計算瓶頸仍是古典核支持向量機。理論上，PQK 的潛力在於相對於其他量子方案的資源優勢：核估計只需 $O(N)$ 而非 $O(N^2)$ 個量子電路（群組 D 約由 $4.5\times10^7$ 降為 $3N$ 個測量設定量級）、沒有可訓練電路參數故無 barren plateau、且對終端去極化雜訊精確不變；本文並推導出相對於古典模擬出現資源交叉所需的條件（量子位元數 $n\gtrsim\log_2 3S$，且映射不可被去量子化、核值不集中），這些條件在本任務中尚未滿足。所有結果皆來自單一種子，應視為指示性結果。
+\end{abstract}
+
+\section{緒論}
+\label{sec:introduction}
+
+SARS-CoV-2 的快速演化使病毒序列變異分析成為計算生物學中的重要問題。圖~\ref{fig:sars-structure} 以正面外觀與斜向剖面兩種視角呈現病毒顆粒，並以引線標示其主要組成。
+
+\begin{wrapfigure}{r}{0.38\textwidth}
+    \centering
+    \includegraphics[width=0.48\linewidth,trim=5bp 0bp 580bp 0bp,clip]{figures/sars-cov-2-structure-2d.pdf}\\[2pt]
+    \includegraphics[width=\linewidth,trim=365bp 0bp 0bp 0bp,clip]{figures/sars-cov-2-structure-2d.pdf}
+    \caption{\small SARS-CoV-2 結構示意圖：(a) 正面外觀；(b) 斜向剖面。依循 NCBI 結構概覽~\cite{ncbiSarsStructure} 繪製之示意圖，未按比例。}
+    \label{fig:sars-structure}
+\end{wrapfigure}
+
+病毒基因組長約 30~kb，其 spike（S）區域位於約 21--25~kb，編碼用於附著宿主細胞膜的蛋白質。該區域亦累積具優勢的突變，使 spike 序列成為研究病毒譜系與序列變異的有用資訊來源。基因組組織與 S 基因位置另見圖~\ref{fig:sars-genome}。
+
+\begin{figure}[!b]
+    \centering
+    \includegraphics[width=0.52\textwidth]{figures/sars-cov-2-genome.pdf}
+    \caption{\small 約 30~kb 之 SARS-CoV-2 基因組示意圖，標示 ORF1a/1b、結構蛋白編碼區 S、E、M、N 與部分輔助 ORF；S 區域（約 21--25~kb）。依循 Murad \textit{et al.}~\cite{murad2024snn}；邊界為近似值。}
+    \label{fig:sars-genome}
+\end{figure}
+
+傳統上，核酸或胺基酸序列的歸類依賴序列比對與系統發生分析：以 BLAST 等資料庫搜尋找出相近序列~\cite{altschul1990blast}，或以多重序列比對後的鄰接法、最大似然法重建演化樹，再依分枝指定類群。SARS-CoV-2 的流行病學譜系則採用 Pango 動態命名~\cite{rambaut2020pango,rambaut2021pango}：系統發生樹根附近分為譜系 A 與 B，後代以點號逐層編號（例如 B.1.1.7）；子層超過三級時改以新的字母開頭。實務上由 Pangolin 以系統發生定位把基因組指派到這些譜系，命名規則與指派演算法彼此獨立~\cite{otoole2021pangolin}。Delta（B.1.617.2）之後代超過三級，因此改以 AY.* 起頭；P.1、C.37、R.1 等則為別名譜系，標籤不寫出完整祖先路徑。
+
+近期研究顯示，僅憑 spike 序列即可透過 SNN (Spiking Neural Network) 的免比對（alignment-free）流程支援譜系分類~\cite{murad2024snn}。此結果顯示 spike 序列含有足以區分譜系的資訊，也促使我們探討其他類型的學習模型是否能在此任務上提供額外助益。
+
+生物序列對機器學習模型提出數項挑戰。蛋白質序列長度不一，而許多傳統分類器需要固定大小的數值輸入，因此現有流程須在分類前對序列進行編碼或轉換。基於比對的特徵工程可能計算成本高昂且仰賴特定領域的選擇；基於訊號與影像的方法則引入額外的轉換。Murad \textit{et al.} 以 one-hot 編碼與零填充處理不定長度的 spike 序列，再套用 SNN 分類器~\cite{murad2024snn}。SNN 以時間上精確的脈衝表示資訊，已被提出作為受生物啟發、可取代傳統神經網路的方案~\cite{maass1997,pfeiffer2018}。然而，在此類序列分類任務上，強古典基線已相當有競爭力，量子機器學習模型是否能帶來超越古典方法的額外貢獻，仍缺乏嚴謹的比較。
+
+變分量子演算法提供一族可整合進學習系統的參數化量子模型，但其實際價值取決於任務與實作選擇~\cite{cerezo2021vqa}；其訓練亦面臨最佳化困難，使效能差異難以歸因於量子特徵本身。投影量子核（PQK）~\cite{huang2021power} 則以固定、無可訓練參數的量子電路作為特徵映射，僅對單量子位元約化密度矩陣進行讀出，再由古典核機器學習，因而可在不受電路最佳化干擾下檢驗量子特徵的作用。
+
+本文據此提出 QuSpike-PQK，一種用於將 SARS-CoV-2 spike 胺基酸序列分類至 Pango 譜系的投影量子核專家架構。序列先以相對於 Wuhan-Hu-1 的突變指示向量編碼，由線性參考分類器評分並路由至譜系群組；對親緣關係相近的兩組譜系，再以群組內判別投影與 Trotter 化 Heisenberg 型哈密頓量演化建構投影量子核，由核支持向量機專家對參考 logits 加上殘差修正。本研究聚焦於以下目標：
+\begin{enumerate}
+    \item 設計以強古典分類器為結構性下界、且量子路徑不含可訓練參數的 PQK 殘差專家架構。
+    \item 為每個量子元件配置介面相同的古典對應物（隨機傅立葉特徵替代模型、無糾纏電路等），並預先註冊決策準則與停止規則。
+    \item 在 22 個 Pango 譜系的 spike 序列上評估，判定量子特徵映射與糾纏是否帶來超越古典替代方案的貢獻，並分析其計算成本與限制。
+\end{enumerate}
+
+\section{相關研究}
+\label{sec:related-work}
+
+既有研究可分為三條脈絡。在序列分類方面，Murad \textit{et al.}~\cite{murad2024snn} 以 SNN (Spiking Neural Network) 研究免比對的 spike 序列分類，Maass~\cite{maass1997} 與 Pfeiffer 和 Pfeil~\cite{pfeiffer2018} 則闡述 SNN 的計算原理。在量子核方法方面，Havlí\v{c}ek \textit{et al.}~\cite{havlicek2019} 提出以量子電路建構特徵空間的保真度核；Huang \textit{et al.}~\cite{huang2021power} 提出投影量子核，僅讀出局部約化密度矩陣，以緩解保真度核的值集中問題，Thanasilp \textit{et al.}~\cite{thanasilp2024concentration} 進一步分析量子核的指數集中現象。變分量子演算法則由 Cerezo \textit{et al.}~\cite{cerezo2021vqa} 回顧，其可訓練電路面臨 barren plateau 問題~\cite{mcclean2018barren}。在量子模型的可替代性與評估方面，Schuld \textit{et al.}~\cite{schuld2021effect} 指出資料編碼決定模型的頻譜，Schreiber \textit{et al.}~\cite{schreiber2023surrogates} 與 Sweke \textit{et al.}~\cite{sweke2023rff} 說明頻帶受限的量子模型可由隨機傅立葉特徵等古典替代模型近似，Bowles \textit{et al.}~\cite{bowles2024better} 則強調量子機器學習需與強古典基線公平比較。本文的設計即建立於這些研究之上。
+
+\section{方法}
+\label{sec:method}
+
+\subsection{核心想法}
+\label{sec:formulation}
+
+QuSpike-PQK 是一個\emph{古典--量子混合（Classical--Quantum Hybrid）架構}：突變編碼、線性參考分類器、路由、LDA 降維與核 SVM 專家都在古典電腦上運行，只有把降維後的輸入映射為量子特徵的哈密頓量演化在量子電路上進行（本文以模擬器實現）。它的做法可以用一句話概括：\emph{先用一個強而簡單的古典分類器作答，再讓量子核專家只在最容易混淆的譜系上提供修正。}量子部分採用投影量子核（PQK）~\cite{huang2021power}：把資料送入一個小型量子電路演化，讀出每個量子位元的局部狀態，再交給古典的核支持向量機（SVM）學習。我們遵守四項設計原則：
+\begin{enumerate}[label=P\arabic*)]
+    \item \textit{量子電路沒有可訓練參數。}電路只由輸入資料與少數超參數 $(n,T,\tau,\gamma)$ 決定，因此結果不會受電路最佳化好壞影響。
+    \item \textit{古典分類器是下界。}量子修正以「加上去」的方式進入，權重可以是零，所以（在驗證資料上）模型不會比古典分類器差。
+    \item \textit{每個量子元件都有古典對應物，}可直接比較，看出量子部分到底有沒有貢獻。
+    \item \textit{判斷標準與停止規則在實驗前就先定好。}
+\end{enumerate}
+
+\textbf{符號。}訓練集為 $\{(s_i,y_i)\}_{i=1}^{N}$，$s_i$ 是 spike 序列，$y_i\in\{1,\dots,C\}$ 是譜系標籤，$C=22$；$M$ 為測試序列數。我們把 22 個譜系分成三組（映射 $\pi$）：
+\begin{itemize}
+    \item 群組 D（Delta）：B.1.617.2、AY.103、AY.2、AY.25、AY.3、AY.4、AY.44，共 $C_{\mathrm{D}}=7$ 類；
+    \item 群組 B（B.1 家族）：B.1、B.1.1、B.1.2、B.1.177，共 $C_{\mathrm{B}}=4$ 類；
+    \item 群組 O：其餘 11 個譜系。
+\end{itemize}
+D 與 B 兩組的譜系彼此非常相似（圖~\ref{fig:lda-scatter} 中 AY.103、AY.3、AY.44 與 B.1、B.1.1、B.1.2 的投影大量重疊），線性分類器的錯誤也集中於此，因此只有這兩組（記為 $\mathcal{Q}$）配置量子專家，分別使用 $n_{\mathrm{D}}=4$ 與 $n_{\mathrm{B}}=2$ 個量子位元。$N_g$ 為群組 $g$ 的訓練序列數。
+
+\subsection{整體流程}
+\label{sec:architecture}
+
+圖~\ref{fig:pqk-architecture} 是整體流程，共四步：(1) 把序列轉成 0/1 突變向量 $x$；(2) 線性分類器給出各譜系的分數 $\ell_{\mathrm{ref}}(x)$，並依其預測決定序列屬於哪一組；(3) 若屬於 D 或 B，將 $x$ 降維後送進量子電路，再由該組的核 SVM 專家 $f_g$ 打分；(4) 將專家分數乘上權重 $s$，加回原分數：
+\begin{equation}
+    \ell(x)=\ell_{\mathrm{ref}}(x)
+    +s\sum_{g\in\mathcal{Q}}\mathbb{1}[r(x)=g]\,P_g\,f_g\!\big(\phi_g(z_g(x))\big).
+    \label{eq:master}
+\end{equation}
+其中 $r$ 為分組（路由器，第~\ref{sec:router} 節），$z_g$ 為降維結果（第~\ref{sec:projection} 節），$\phi_g$ 為量子特徵（第~\ref{sec:encoding} 節），$f_g$ 為專家（第~\ref{sec:kernel} 節），$P_g$ 把專家分數放到對應譜系的位置，$s\ge0$ 為在驗證資料上選出的權重（第~\ref{sec:fusion} 節）。若序列被分到 O 組，或 $s=0$，結果就等於古典分類器。
+
+\begin{figure}[!t]
+    \centering
+    \resizebox{0.88\textwidth}{!}{\begin{tikzpicture}[
+        box/.style={draw, rounded corners=1.5pt, align=center, font=\small,
+                    inner sep=3pt, minimum height=9mm, text width=3.0cm},
+        qbox/.style={box, fill=blue!10},
+        arr/.style={-{Stealth[length=1.8mm]}, thin},
+        lab/.style={font=\small\itshape, inner sep=1.5pt}]
+        \node[box] (seq) at (0,0) {Spike 序列 $s$};
+        \node[box] (mut) at (3.7,0) {突變指示向量\\ $x\in\{0,1\}^{V}$，$V=3{,}686$};
+        \node[box] (ref) at (7.4,0) {線性參考分類器\\ $\ell_{\mathrm{ref}}(x)=Wx+b$};
+        \node[box] (route) at (11.1,0) {路由器\\ $r(x)=\pi(\arg\max_c\ell_{\mathrm{ref},c})$};
+        \node[box] (lda) at (3.7,-2.4) {群組 LDA ＋ 縮放\\ $z_g\in[-\tfrac{\pi}{2},\tfrac{\pi}{2}]^{2n_g}$};
+        \node[qbox] (pqk) at (7.4,-2.4) {Trotter 化 $e^{-i\tau H(z)}$\\ 1-RDM 讀出 $\phi\in[-1,1]^{3n_g}$};
+        \node[box] (svm) at (11.1,-2.4) {RBF 核 $\kappa(\phi,\phi')$\\ SVM 專家 $f_g$};
+        \node[box, text width=3.2cm] (fuse) at (14.9,-2.4) {$\ell=\ell_{\mathrm{ref}}+s\,P_g f_g$\\ $\hat{y}=\arg\max_c\ell_c$};
+        \draw[arr] (seq) -- (mut);
+        \draw[arr] (mut) -- (ref);
+        \draw[arr] (ref) -- (route);
+        \draw[arr] (route.south) -- ++(0,-0.55) -| node[lab, pos=0.18, above] {$g\in\{\mathrm{D},\mathrm{B}\}$} (lda.north);
+        \draw[arr] (lda) -- (pqk);
+        \draw[arr] (pqk) -- (svm);
+        \draw[arr] (svm) -- (fuse);
+        \draw[arr] (route.east) -| node[lab, pos=0.25, above] {$g=\mathrm{O}$：無專家} (fuse.north);
+        \draw[arr, dashed] (ref.north) -- ++(0,0.5) -| node[lab, pos=0.25, above] {殘差路徑} ([xshift=1.2cm]fuse.east) -- (fuse.east);
+    \end{tikzpicture}}
+    \caption{\small QuSpike-PQK 架構。線性參考分類器同時負責預測與分組；只有被分到 Delta（D）或 B.1 家族（B）的序列會經過量子特徵映射（陰影部分）。量子部分沒有可訓練參數，$s=0$ 時即退回參考分類器。}
+    \label{fig:pqk-architecture}
+\end{figure}
+
+\subsection{突變指示表徵}
+\label{sec:mutations}
+
+突變編碼分兩步：先把每條序列與參考序列比對，列出突變；再把這些突變編成固定長度的 0/1 向量。
+
+\textbf{步驟一：序列 $\to$ 突變集合。}參考序列為 Wuhan-Hu-1 的 spike 蛋白（NCBI YP\_009724390.1，1,273 個胺基酸）。長度與參考相同的序列逐位置比較，長度不同者以序列比對（Python \texttt{difflib.SequenceMatcher}）對位。每個差異記成 (位置, 胺基酸)，位置由 1 起算：
+\begin{itemize}[nosep]
+    \item \emph{取代：}記為 (位置, 新胺基酸)，例如 D614G 記為 (614, G)；
+    \item \emph{內部刪除：}記為 (位置, ``-'')，例如 Delta 的 156--157 缺失；
+    \item \emph{首尾較短：}視為未觀測，不算刪除；\emph{插入：}忽略；
+    \item \emph{未知符號 \texttt{X}：}含 \texttt{X} 的位置不計入。
+\end{itemize}
+
+\textbf{步驟二：突變集合 $\to$ 0/1 向量。}詞彙表 $\mathcal{V}$ 只由訓練序列建立：把所有出現過的 (位置, 胺基酸) 組合去重排序，共 $V=|\mathcal{V}|=3{,}686$ 種。對每條序列，詞彙表中該序列具有的突變設為 1，其餘為 0：
+\begin{equation}
+    x_v(s)=\mathbb{1}[v\in m(s)],\qquad v\in\mathcal{V},
+    \label{eq:mutation}
+\end{equation}
+其中 $m(s)$ 為步驟一得到的突變集合。測試集中未出現於訓練詞彙表的突變直接丟棄、不新增維度，以免測試資料洩漏到特徵。因此 $x_v=1$ 表示「序列在某位置的胺基酸與參考不同，且恰為第 $v$ 號突變」；例如某條 Delta 序列在 L452R、T478K、D614G 處有突變，這些維度為 1，其餘為 0。22,175 條訓練序列形成 $22{,}175\times3{,}686$ 的矩陣，同時是線性參考分類器與 LDA 的輸入。我們也測試過凍結的蛋白質語言模型（ESM-2）嵌入，並預先規定須比突變向量高出 0.02 macro-F1 才採用；結果較低，故全文與所有對照組皆使用 $x$。
+
+\subsection{線性參考分類器與路由器}
+\label{sec:router}
+
+參考分類器是最單純的線性 softmax 模型：
+\begin{equation}
+    \ell_{\mathrm{ref}}(x)=Wx+b,\qquad W\in\mathbb{R}^{C\times V},\ b\in\mathbb{R}^{C},
+    \label{eq:reference}
+\end{equation}
+以交叉熵與 AdamW 訓練（學習率 $3\times10^{-3}$、權重衰減 $10^{-4}$、批次 512、60 個 epoch）。它同時扮演三個角色：對照組 C0、模型的下界，以及路由器——取其預測譜系所屬的群組，
+\begin{equation}
+    r(x)=\pi\big(\hat{c}_{\mathrm{ref}}(x)\big),\qquad \hat{c}_{\mathrm{ref}}(x)=\arg\max_{c}\ell_{\mathrm{ref},c}(x).
+    \label{eq:router}
+\end{equation}
+若序列被分錯組，正確的專家就幫不上忙，所以我們同時報告路由準確率 $\rho=\frac1M\sum_j\mathbb{1}[r(x_j)=\pi(y_j)]$，它限制了能到達正確專家的序列比例。
+
+\subsection{群組內判別投影}
+\label{sec:projection}
+
+群組 $g$ 的量子電路只接受 $2n_g$ 個實數（$n_g$ 個「場」與 $n_g$ 個「耦合」），但 $x$ 有 3,686 維，必須先降維（圖~\ref{fig:projection}）。對每個 $g\in\mathcal{Q}$，只用該組訓練序列擬合線性判別分析（LDA）~\cite{fisher1936}，取 $k_g=\min(C_g-1,2n_g)$ 個判別方向（$k_{\mathrm{D}}=6$、$k_{\mathrm{B}}=3$）得到 $u=A_g^{\top}x$，再以訓練資料的第 1、99 百分位數 $q^{\mathrm{lo}}_j,q^{\mathrm{hi}}_j$ 截斷並線性縮放到 $[-\pi/2,\pi/2]$：
+\begin{equation}
+    z_j=\pi\,\frac{\operatorname{clip}(u_j;\,q^{\mathrm{lo}}_j,q^{\mathrm{hi}}_j)-q^{\mathrm{lo}}_j}{q^{\mathrm{hi}}_j-q^{\mathrm{lo}}_j}-\frac{\pi}{2},\qquad j\le k_g,
+    \label{eq:scaling}
+\end{equation}
+不足的維度補 0（$z_j=0,\ k_g<j\le2n_g$；D、B、O 三組的投影結果見圖~\ref{fig:lda-scatter}：O 組的質心間距／類內標準差高達 12.9，遠高於 D 組的 2.60 與 B 組的 2.43，這與 O 組不需量子專家、由古典分類器處理即可的設計相符）。選用 LDA 而非 PCA，是因為組內變異最大的方向通常不是最能區分譜系的方向；分位數截斷可避免離群值壓縮範圍；區間取 $[-\pi/2,\pi/2]$ 則避免 $\pm\pi$ 的旋轉只差一個全域相位而無法區分。
+
+\begin{figure}[!t]
+    \centering
+    \includegraphics[width=0.70\textwidth]{figures/z1z2.png}
+    \caption{D、B、O 三組（由左至右）訓練序列的 LDA 投影（前兩軸 $z_1$、$z_2$，縮放後單位 rad，各抽 3,000 筆，依譜系上色；LDA 僅以訓練集擬合）。D 組：AY.25、AY.4、B.1.617.2 分得開，AY.103、AY.3、AY.44 疊在一團；B 組：B.1.177 獨立，B.1、B.1.1、B.1.2 沿同一條帶展開；O 組群集明顯而緊密（O 組不進量子路徑，此處僅供對照）。D、B、O 的質心平均間距／類內標準差分別為 2.60、2.43、12.91，被截斷至 $\pm\pi/2$ 的序列比例分別為 10.0\%、7.1\%、11.9\%。}
+    \label{fig:lda-scatter}
+\end{figure}
+
+\begin{figure}[!t]
+    \centering
+    \resizebox{0.78\textwidth}{!}{\begin{tikzpicture}[
+        box/.style={draw, rounded corners=1.5pt, align=center, font=\small, inner sep=3pt, minimum height=9mm, text width=2.9cm},
+        qbox/.style={box, fill=blue!10},
+        arr/.style={-{Stealth[length=1.8mm]}, thin}]
+        \node[box] (x) at (0,0) {$x\in\{0,1\}^{3686}$};
+        \node[box] (lda) at (3.6,0) {LDA\\ $u=A_g^{\top}x\in\mathbb{R}^{k_g}$};
+        \node[box] (sc) at (7.2,0) {分位數截斷＋縮放\\ $z_j\in[-\tfrac{\pi}{2},\tfrac{\pi}{2}]$};
+        \node[box] (pad) at (10.8,0) {補零至 $2n_g$ 維\\ $z\in\mathbb{R}^{2n_g}$};
+        \node[qbox, text width=3.4cm] (q) at (14.6,0) {前 $n_g$ 個 $\to$ 場 $R_Z$\\ 後 $n_g$ 個 $\to$ 耦合 $e^{-i\Delta z h}$};
+        \draw[arr] (x)--(lda); \draw[arr] (lda)--(sc); \draw[arr] (sc)--(pad); \draw[arr] (pad)--(q);
+        \node[font=\small, anchor=west, align=left] at (-1.4,-1.5) {群組 D：$3686\to k_{\mathrm{D}}{=}6\to$ 補 2 個 0 $\to 8$ 維 $=$ 4 個場 $+$ 4 個耦合（$z_7{=}z_8{=}0$，量子位元 4 與其他位元解耦）};
+        \node[font=\small, anchor=west, align=left] at (-1.4,-2.1) {群組 B：$3686\to k_{\mathrm{B}}{=}3\to$ 補 1 個 0 $\to 4$ 維 $=$ 2 個場 $+$ 1 個耦合（$z_4$ 未使用）};
+    \end{tikzpicture}}
+    \caption{群組內判別投影：以該組訓練序列擬合 LDA 取 $k_g$ 個判別方向，經分位數截斷與縮放成電路角度，不足 $2n_g$ 的維度補 0；前 $n_g$ 維作為局部場，後 $n_g$ 維作為相鄰耦合。}
+    \label{fig:projection}
+\end{figure}
+
+\subsection{哈密頓量演化編碼（量子特徵映射）}
+\label{sec:encoding}
+
+對 $n$ 個量子位元與輸入 $z\in[-\pi/2,\pi/2]^{2n}$，定義環 $E=\{(j,\,j\bmod n+1)\}_{j=1}^{n}$ 上的 Heisenberg 型哈密頓量
+\begin{equation}
+    H(z)=\sum_{j=1}^{n}z_jZ_j+\sum_{(j,j')\in E}z_{n+j}\,h_{jj'},\qquad
+    h_{jj'}=X_jX_{j'}+Y_jY_{j'}+Z_jZ_{j'},
+    \label{eq:hamiltonian}
+\end{equation}
+其中前 $n$ 個輸入是各量子位元的局部場，後 $n$ 個是相鄰耦合強度（$n=2$ 時 $E$ 僅含邊 $(1,2)$）。令 $\Delta=\tau/T$，以一階 Trotter 分解把演化切成 $T$ 小步：
+\begin{equation}
+    U_T(z)=\prod_{t=1}^{T}\Bigg[\prod_{(j,j')\in E}e^{-i\Delta z_{n+j}h_{jj'}}\prod_{j=1}^{n}e^{-i\Delta z_jZ_j}\Bigg],
+    \label{eq:trotter}
+\end{equation}
+作用於初始態 $|{+}\rangle^{\otimes n}=H_{\mathrm{d}}^{\otimes n}|0\rangle^{\otimes n}$（$H_{\mathrm{d}}$ 為 Hadamard 閘），並取 $T=4$、$\tau=0.8$。每個因子皆為閘模型硬體的原生閘：$e^{-i\Delta z Z}=R_Z(2\Delta z)$；又因 $XX$、$YY$、$ZZ$ 兩兩對易，
+\begin{equation}
+    e^{-i\Delta J h_{jj'}}=R_{XX}(2\Delta J)\,R_{YY}(2\Delta J)\,R_{ZZ}(2\Delta J)
+\end{equation}
+精確成立。再者 $h_{jj'}=2\,\mathrm{SWAP}_{jj'}-I$，故每個耦合是部分交換
+\begin{equation}
+    e^{-i\alpha h_{jj'}}=e^{i\alpha}\big[\cos(2\alpha)\,I-i\sin(2\alpha)\,\mathrm{SWAP}_{jj'}\big],
+    \label{eq:partial-swap}
+\end{equation}
+與不均勻局部場 $z_j\neq z_{j'}$ 配合便產生糾纏。
+
+電路 $U_T$ 本身即為特徵映射的定義，因此 Trotter 誤差並非模型近似誤差，只衡量特徵映射與連續演化 $e^{-i\tau H(z)}$ 的接近程度。一階上界~\cite{lloyd1996,childs2021trotter}
+\begin{equation}
+    \big\|U_T(z)-e^{-i\tau H(z)}\big\|\le\frac{\tau^2}{2T}\sum_{a<b}\big\|[H_a,H_b]\big\|=O\!\left(\frac{n\tau^2}{T}\right)
+    \label{eq:trotter-error}
+\end{equation}
+適用於此設定（$|z_j|\le\pi/2$ 時各項範數為 $O(1)$，且僅與 $O(1)$ 個相鄰項不對易）。實測讀出最大誤差 $\max|\phi-\phi_{\mathrm{exact}}|$（$\tau=0.7$，40 組隨機 $z$ 的平均）隨 $T$ 按 $1/T$ 下降：$n=3$ 時由 $T=4$ 的 $1.93\times10^{-1}$ 降至 $T=256$ 的 $3.05\times10^{-3}$（對數座標斜率 $-0.997$）。
+
+\textit{讀出。}令 $|\psi(z)\rangle=U_T(z)|{+}\rangle^{\otimes n}$，對每個量子位元取其單量子位元約化密度矩陣（1-RDM）$\rho_k=\tfrac12(I+\phi_k\cdot\boldsymbol{\sigma})$，其中 Bloch 向量 $\phi_k=(\langle X_k\rangle,\langle Y_k\rangle,\langle Z_k\rangle)$；全部拼起來即為量子特徵
+\begin{equation}
+    \phi(z)=\big(\phi_1(z),\dots,\phi_n(z)\big)\in[-1,1]^{3n}.
+    \label{eq:readout}
+\end{equation}
+此映射有兩個結構性質（圖~\ref{fig:viz-encoding} 為電路與數值示例）：
+
+\textit{命題 1（磁化守恆）。}對所有 $z$，$\sum_{k}\langle Z_k\rangle=0$。因為總磁化 $\sum_kZ_k$ 與所有場及耦合閘對易（$h_{jj'}$ 具 SU(2) 不變性），演化中守恆，而初始態 $|{+}\rangle^{\otimes n}$ 的期望值為零。因此 $\phi$ 實際只有 $3n-1$ 個自由維度。
+
+\textit{命題 2（無耦合時的乘積態）。}若所有耦合為零，則對任意 $T$ 有
+\begin{equation}
+    \phi_k(z)=(\cos 2\tau z_k,\ \sin 2\tau z_k,\ 0).
+    \label{eq:product-limit}
+\end{equation}
+即每個量子位元只是繞 $z$ 軸獨立旋轉 $2\tau z_k$。實作與此式吻合到 $2.22\times10^{-15}$；又因 $2\tau|z_k|\le0.8\pi<\pi$，此映射在 $[-\pi/2,\pi/2]$ 上為單射。
+
+命題 2 有一個實際後果：群組 D 只有 $k_{\mathrm{D}}=6<8$ 個有效輸入，補零使邊 $(3,4)$、$(4,1)$ 的耦合為零，量子位元 4 因而與其他位元解耦，糾纏只發生在 $1$--$2$--$3$ 之間；群組 B 的 3 個輸入剛好填滿兩場與一耦合，沒有此問題。
+
+\textit{頻率限制。}依 Schuld \textit{et al.}~\cite{schuld2021effect}，$\phi$ 的每個分量都是 $z$ 的三角多項式：場輸入最高頻率為 $2\tau$，耦合輸入為 $4\tau$。這種「頻帶受限」正是古典替代模型能近似它的原因（第~\ref{sec:controls} 節）。
+
+\begin{figure}[!t]
+    \centering
+    \noindent\textbf{(a)}\hfill\null\\[-2pt]
+    \resizebox{0.54\textwidth}{!}{%
+    \begin{quantikz}[row sep=0.2cm, column sep=0.3cm, font=\small]
+        \lstick{$q_1$} & \gate{H_{\mathrm{d}}} & \gate{R_Z(2\Delta z_1)}\gategroup[4,steps=3,style={dashed,rounded corners,inner xsep=3pt,inner ysep=4pt},label style={label position=below,anchor=north,yshift=-0.25cm}]{重複 $T$ 次} & \gate[2]{e^{-i\Delta z_5 h}} & \qw & \gate[4]{e^{-i\Delta z_8 h}} & \meter{} & \rstick{$\phi_1$}\\
+        \lstick{$q_2$} & \gate{H_{\mathrm{d}}} & \gate{R_Z(2\Delta z_2)} & & \gate[2]{e^{-i\Delta z_6 h}} & & \meter{} & \rstick{$\phi_2$}\\
+        \lstick{$q_3$} & \gate{H_{\mathrm{d}}} & \gate{R_Z(2\Delta z_3)} & \gate[2]{e^{-i\Delta z_7 h}} & & & \meter{} & \rstick{$\phi_3$}\\
+        \lstick{$q_4$} & \gate{H_{\mathrm{d}}} & \gate{R_Z(2\Delta z_4)} & & \qw & & \meter{} & \rstick{$\phi_4$}
+    \end{quantikz}}\\[2pt]
+    \begin{minipage}[t]{0.325\textwidth}\centering
+        \textbf{(b)}\\[1pt]
+        \includegraphics[width=\linewidth]{figures/fig_readout.pdf}
+    \end{minipage}\hfill
+    \begin{minipage}[t]{0.325\textwidth}\centering
+        \textbf{(c)}\\[1pt]
+        \includegraphics[width=\linewidth]{figures/trotter_error.pdf}
+    \end{minipage}\hfill
+    \begin{minipage}[t]{0.325\textwidth}\centering
+        \textbf{(d)}\\[1pt]
+        \includegraphics[width=\linewidth]{figures/fig_decision.pdf}
+    \end{minipage}
+    \caption{量子特徵映射與決策準則的視覺化。(a) 群組 D（$n=4$）的電路：$H_{\mathrm{d}}$ 製備 $|{+}\rangle^{\otimes4}$，重複 $T$ 個 Trotter 步（$R_Z$ 場與環上四條耦合 $e^{-i\Delta z h}$），最後讀出各量子位元的 Bloch 向量 $\phi_k$。(b) 固定其餘輸入、掃描 $z_1$ 時量子位元 1 的讀出（$n{=}4$、$T{=}4$、$\tau{=}0.8$）：實線為 MAIN，虛線為無耦合的 C3（$\cos2\tau z,\ \sin2\tau z,\ 0$，命題~2），點線為對此一維切片以 24 組隨機傅立葉特徵做嶺迴歸的擬合（RMSE $\approx0.002$），顯示頻帶受限的映射可被 RFF 近似。(c) Trotter 誤差對 $T$：讀出 $\phi$ 與精確演化之最大偏差 $\max|\phi-\phi_{\mathrm{exact}}|$（$\tau{=}0.7$，每點為 40 組隨機 $z$ 的平均，陰影為最小至最大範圍），對數座標斜率約 $-1$，與 $O(1/T)$ 一致。(d) 各配置的測試 macro-F1 與 MAIN $\pm\delta$ 雜訊帶（陰影）：所有對照組皆落在帶內。}
+    \label{fig:viz-encoding}
+\end{figure}
+
+\subsection{投影量子核與群組專家}
+\label{sec:kernel}
+
+有了量子特徵 $\phi$，就用 Huang \textit{et al.}~\cite{huang2021power} 的投影量子核衡量兩條序列的相似度；因為 $\|\rho_k-\rho_k'\|_F^2=\tfrac12\|\phi_k-\phi_k'\|_2^2$，它等價於在 $\phi$ 上套用高斯核：
+\begin{equation}
+    \kappa(z,z')=\exp\!\big(-\gamma\,\|\phi(z)-\phi(z')\|_2^2\big),
+    \label{eq:pqk}
+\end{equation}
+頻寬採用中位數法，以該組 512 個訓練樣本估計：
+\begin{equation}
+    \gamma=\Big(2\operatorname*{median}_{a<b}\|\phi_a-\phi_b\|_2^2\Big)^{-1}.
+    \label{eq:median-gamma}
+\end{equation}
+只讀出局部 1-RDM（而非比較整個量子態的保真度核~\cite{havlicek2019}），可以緩解大型希爾伯特空間中核值趨於相同的問題~\cite{huang2021power}。
+
+每個群組 $g\in\mathcal{Q}$ 的專家 $f_g$ 是使用預先計算 Gram 矩陣 $K_g=[\kappa(z_a,z_b)]$ 的多類別 SVM（$C_{\mathrm{SVM}}=10$，成對訓練，再以 one-vs-rest 方式整合分數）：
+\begin{equation}
+    f_{g,c}(x)=\sum_{a\in\mathrm{SV}}\beta_{c,a}\,\kappa\big(z_g(x),z_a\big)+b_c,\qquad c\in\mathcal{Y}_g.
+    \label{eq:svm}
+\end{equation}
+若浮點誤差使 $K_g$ 出現小於 $-10^{-8}$ 的負特徵值，就將其截為零並把對角線重新正規化為 1（並記錄）。當 $8N_g^2$ 位元組超過 2~GB 時改用 2,048 個地標點的 Nystr\"om 近似~\cite{williams2001nystrom}；最大的群組 D（$N_{\mathrm{D}}=9{,}538$）仍可精確計算（單精度 364~MB）。
+
+\subsection{殘差融合與推論}
+\label{sec:fusion}
+
+推論就是式~\eqref{eq:master}：把被分到的群組之專家分數乘上 $s$ 加到線性分數上，取最大者為預測。SVM 分數與線性分數的尺度不同，所以 $s$ 要選而非固定，候選值為 $\mathcal{S}=\{0,\tfrac14,\tfrac12,1,2,4\}$，以驗證集（各譜系訓練序列中日期最新的 15\%）的 macro-F1 決定。選擇時，參考分類器、投影與專家都用其餘 85\% 重新訓練（專家與 $s$ 無關，只需訓練一次再縮放）；選定後，全部元件改用完整訓練集重訓。演算法~1 整理了完整流程。
+% NOTE (implementation, Research/QuSpike_PQK/pipeline.py::_expert_blocks):
+% the current code applies the expert only to test rows that are routed to g
+% AND whose true lineage lies in g (projections are computed on group.test_idx,
+% which is defined from y_test). Rows routed to g from another group keep the
+% reference prediction, which is already wrong for them, so the bias cannot
+% raise reported scores; label-free inference as described here should still
+% be implemented before final numbers are reported.
+
+\textit{命題 3（下界與局部性）。}(i) $s=0$ 時模型等於參考分類器；因 $0\in\mathcal{S}$，被選出的配置在驗證集上不會比參考分類器差（這是驗證集上的性質，不是測試集保證）。(ii) 被分到 O 組的序列，預測與參考分類器完全相同（實驗中已驗證）。(iii) 被分到 $g\in\mathcal{Q}$ 的序列，只有該組 $C_g$ 個分數被修改。
+
+這使我們能區分「量子部分沒有幫助」與「量子部分沒有訓練好」：模型在結構上不會被阻止超越參考分類器。
+
+\begin{figure}[!htb]
+    \centering
+    \begin{minipage}{0.92\textwidth}
+    \hrule\smallskip
+    \noindent\textbf{演算法 1：}QuSpike-PQK 訓練與推論。
+    \smallskip\hrule\smallskip
+    \small
+    \begin{algorithmic}[1]
+        \REQUIRE 訓練集 $\mathcal{D}_{\mathrm{tr}}$；群組 $\pi$；$(n_g)_{g\in\mathcal{Q}}$、$T$、$\tau$；網格 $\mathcal{S}$
+        \STATE 由訓練序列建立 $\mathcal{V}$；依式~\eqref{eq:mutation} 編碼 $x$
+        \STATE 將 $\mathcal{D}_{\mathrm{tr}}$ 切分為擬合集（85\%）與驗證集（各譜系最新 15\%）
+        \FOR{$\mathcal{D}\in\{\text{擬合集},\ \mathcal{D}_{\mathrm{tr}}\}$}
+            \STATE 依式~\eqref{eq:reference} 於 $\mathcal{D}$ 上訓練 $\ell_{\mathrm{ref}}$
+            \FOR{$g\in\mathcal{Q}$}
+                \STATE 於 $\{x\in\mathcal{D}:y\in\mathcal{Y}_g\}$ 上擬合 $A_g$ 與分位數；依式~\eqref{eq:scaling} 計算 $z$
+                \STATE $\phi\leftarrow$ $U_T(z)|{+}\rangle^{\otimes n_g}$ 的 1-RDM 讀出 \eqref{eq:readout} \COMMENT{快取}
+                \STATE 依式~\eqref{eq:median-gamma} 設定 $\gamma$；依式~\eqref{eq:pqk} 建立 $K_g$；強制半正定
+                \STATE 於 $K_g$ 上訓練 SVM 專家 $f_g$
+            \ENDFOR
+            \IF{$\mathcal{D}$ 為擬合集}
+                \STATE $s^{\star}\leftarrow\arg\max_{s\in\mathcal{S}}$ 式~\eqref{eq:master} 的驗證 macro-F1
+            \ENDIF
+        \ENDFOR
+        \STATE \textbf{對 $x$ 推論：}$\ell\leftarrow\ell_{\mathrm{ref}}(x)$；$g\leftarrow r(x)$
+        \IF{$g\in\mathcal{Q}$ 且 $s^{\star}>0$}
+            \STATE $\ell\leftarrow\ell+s^{\star}P_g f_g(\phi_g(z_g(x)))$
+        \ENDIF
+        \RETURN $\hat{y}=\arg\max_c\ell_c$
+    \end{algorithmic}
+    \smallskip\hrule
+    \end{minipage}
+\end{figure}
+
+\subsection{對照組與古典替代模型}
+\label{sec:controls}
+
+所有對照組與主模型使用相同的表徵、路由、投影、分類器與混合網格，只有作用於 $z_g$ 的特徵映射不同（表~\ref{tab:pqk-controls}）：
+\begin{itemize}
+    \item \textit{C1：}直接在 $z_g$ 上套高斯核——檢驗「任何特徵映射」是否有幫助。
+    \item \textit{C2：}隨機傅立葉特徵（RFF）替代模型~\cite{rahimi2007rff,schreiber2023surrogates,sweke2023rff}：
+    $\phi^{\mathrm{RFF}}(z)=[\cos(\Omega^{\top}z+\beta),\sin(\Omega^{\top}z+\beta)]_{1:3n}$，$\Omega_{ij}\sim\mathcal{N}(0,(2\tau)^2)$、$\beta_i\sim\mathcal{U}[0,2\pi)$。其頻率尺度與量子映射的頻帶限制 $2\tau$ 相符，輸出維度與範圍也與 $\phi$ 相同。若 C2 與主模型表現相當，就表示量子映射在此任務上可被古典方法取代。
+    \item \textit{C3：}把所有耦合設為零。依命題~2，其核有封閉形式
+    \begin{equation}
+        \kappa_{\mathrm{C3}}(z,z')=\prod_{k=1}^{n}\exp\!\big(-4\gamma\sin^2\!\big(\tau(z_k-z_k')\big)\big),
+        \label{eq:c3-kernel}
+    \end{equation}
+    是一個古典的週期核。因此 MAIN 與 C3 的比較是唯一能檢驗「糾纏是否有貢獻」的方式。C3 同時少用了 $n$ 個耦合輸入，所以若 C3 較差並不能單獨歸功於糾纏，但若兩者相當，則代表糾纏映射即使看到更多輸入也沒有增益。
+    \item \textit{C4：}寬度匹配的 MLP（一層寬度 $3n_g$ 的 $\tanh$ 隱藏層），作用於 $z_g$。
+    \item \textit{C5：}不分群，用單一 PQK 專家處理全部 22 類（$n=4$、$k=8$）。
+\end{itemize}
+
+\begin{table}[!ht]
+    \centering
+    \caption{各配置。皆共用 $x$、路由器、投影與混合網格。}
+    \label{tab:pqk-controls}
+    \small
+    \setlength{\tabcolsep}{4pt}
+    \renewcommand{\arraystretch}{1.2}
+    \begin{tabularx}{\textwidth}{@{}l>{\raggedright\arraybackslash}Xc>{\raggedright\arraybackslash}X@{}}
+        \toprule
+        編號 & 作用於 $z_g$ 的特徵映射 & 分群 & 所回答的問題 \\
+        \midrule
+        MAIN & PQK $\phi(z)$，具糾纏 & \checkmark & --- \\
+        C0 & 無（僅參考分類器） & --- & 此框架是否有用？ \\
+        C1 & 恆等映射，高斯核 & \checkmark & 任何特徵映射是否有用？ \\
+        C2 & RFF 替代模型，$3n$ 維 & \checkmark & PQK 是否可被古典方法取代？ \\
+        C3 & 無耦合的 PQK & \checkmark & 糾纏是否有用？ \\
+        C4 & MLP，寬度 $3n$ & \checkmark & 等容量網路 \\
+        C5 & PQK，全部 22 類 & --- & 分群是否有用？ \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+\subsection{預先註冊的決策準則}
+\label{sec:criteria}
+
+為避免事後挑選結果，判斷標準事先固定。對配置 $A$、$B$，令 $\Delta_{AB}=F_A-F_B$ 為平均測試 macro-F1 之差，$\sigma_A,\sigma_B$ 為種子標準差，$\delta=0.02$ 為先前重複執行所估計的雜訊下限。若 $\Delta_{AB}>\delta$ 且 $\Delta_{AB}>\max(\sigma_A,\sigma_B)$，主張\emph{成立}；若 $|\Delta_{AB}|\le\max(\delta,\sigma_A,\sigma_B)$，視為\emph{在雜訊內}；其餘為\emph{不成立}。四項主張為：框架有用（MAIN 對 C0）；量子特徵有用（MAIN 對 C1、C2、C4 中最好者）；糾纏有用（MAIN 對 C3）；分群有用（MAIN 對 C5）。若兩項量子主張皆不成立，就宣告 PQK 在此任務上可被古典方法取代，且不得靠加大 $n$ 或重調 $(T,\tau,\gamma)$ 來翻轉結論。
+
+\subsection{計算複雜度}
+\label{sec:complexity}
+
+令 $L\approx1{,}273$ 為序列長度，$E_{\mathrm{ep}}=60$ 為 epoch 數，$D=3n$ 為量子特徵維度，$N_{\mathrm{SV}}\le N_g$ 為支持向量數，$S$ 為每個測量設定的 shots 數。電路含 $O(Tn)$ 個閘，依實作沿環依序施加閘時深度亦為 $O(Tn)$。表~\ref{tab:complexity} 列出各階段成本。
+
+\begin{table}[!ht]
+    \centering
+    \caption{QuSpike-PQK 各階段的漸近成本。訓練成本在適用時針對單一群組 $g$；推論為每條測試序列。}
+    \label{tab:complexity}
+    \small
+    \setlength{\tabcolsep}{5pt}
+    \renewcommand{\arraystretch}{1.2}
+    \begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lll@{}}
+        \toprule
+        階段 & 訓練 & 推論（每條序列） \\
+        \midrule
+        突變編碼 & 等長 $O(NL)$；含比對最壞 $O(NL^2)$ & $O(L)$ 至 $O(L^2)$ \\
+        線性參考分類器與路由器 & $O(E_{\mathrm{ep}}NVC)$（稠密） & $O(VC)$ \\
+        群組 LDA & $O(N_gV\min(N_g,V))$ & $O(Vk_g)$ \\
+        PQK，狀態向量模擬 & $O(N_g\,Tn\,2^{n})$ 時間，每樣本 $O(2^n)$ 記憶體 & $O(Tn\,2^{n})$ \\
+        PQK，量子硬體 & $3N_g$ 個電路設定 $\times\,S$ shots，各 $O(Tn)$ 個閘 & $3S$ shots \\
+        Gram 矩陣 & $O(N_g^2D)$ 時間，$O(N_g^2)$ 記憶體 & $O(N_gD)$ \\
+        核 SVM & $O(N_g^2)$ 至 $O(N_g^3)$ & $O(N_{\mathrm{SV}}C_g)$ \\
+        混合權重搜尋 & 式~\eqref{eq:master} 評估 $|\mathcal{S}|$ 次，專家僅擬合一次 & --- \\
+        \midrule
+        保真度核（比較用） & $N_g(N_g-1)/2$ 個電路 $\times\,S$ shots & $N_g$ 個電路 $\times\,S$ shots \\
+        \bottomrule
+    \end{tabular*}
+\end{table}
+
+可得三點結論。第一，$n\le4$ 時狀態向量至多 16 個振幅，量子特徵每條序列只需約 $10^2$--$10^3$ 次運算，遠小於核列的 $10^5$ 與線性分類器的 $8\times10^4$；實測 19,630 條序列的量子特徵僅耗時 0.37~s，核 SVM 卻需 185--576~s。第二，古典核機器（$O(N_g^2)$ 記憶體、至多 $O(N_g^3)$ 時間）才是瓶頸，換成量子硬體也無法消除。第三，投影讓量子工作量與資料量成線性（命題~5）；由於 $\phi$ 與隨機種子無關（P1），每個輸入只算一次並快取。
+
+\subsection{量子優勢與限制}
+\label{sec:quantum-tradeoffs}
+
+\textit{測量雜訊。}$\phi$ 的每個分量是 $S$ 個 $\pm1$ 結果的平均。由 Hoeffding 不等式與聯集界，至少以機率 $1-\eta$，$\|\hat{\phi}-\phi\|_\infty\le\varepsilon_S=\sqrt{2\ln(6n/\eta)/S}$。結合高斯核的 Lipschitz 性，核誤差為 $|\hat{\kappa}-\kappa|=O(\gamma\,n\,\varepsilon_S)$；中位數法下 $\gamma=\Theta(1/n)$，故誤差為 $O(\sqrt{\log(n/\eta)/S})$，每個設定 $S=O(\varepsilon^{-2}\log(n/\eta))$ 次 shots 即可達到核精度 $\varepsilon$。
+
+\textit{命題 4（對終端去極化雜訊不變）。}若局部去極化通道於 $U_T$ 之後作用在每個量子位元，且 $\gamma$ 依式~\eqref{eq:median-gamma} 在含雜訊的讀出上重新估計，則 Gram 矩陣不變。原因是該通道把每個 Bloch 向量乘以 $c=1-4p/3$，所有平方距離縮放 $c^2$ 倍，而中位數法的 $\gamma$ 縮放 $c^{-2}$ 倍，兩者抵消。數值上 $p\le0.1$ 時 Gram 矩陣在位元層級完全相同；但這不適用於穿插在糾纏閘之間的雜訊、振幅阻尼、相干過度旋轉或非對稱讀出誤差，也使得對 $p$ 的掃描在此流程中沒有資訊量。
+
+\textit{命題 5（資源計數與交叉條件）。}令 $N$ 為訓練樣本數、$M$ 為測試樣本數、$S$ 為每個設定的 shots 數。(i) 保真度核~\cite{havlicek2019} 的每個元素 $|\langle\psi(z)|\psi(z')\rangle|^2$ 需一個 compute--uncompute 電路 $U_T^{\dagger}(z')U_T(z)$，Gram 矩陣共需 $N(N-1)/2$ 個電路，總 shots 為 $S\,N(N-1)/2=\Theta(SN^2)$；群組 D（$N=9{,}538$）為 $4.55\times10^7$ 個電路。(ii) PQK 每個樣本只需 $X^{\otimes n}$、$Y^{\otimes n}$、$Z^{\otimes n}$ 三個設定（每個設定一次測出全部 $n$ 個同類 Pauli 期望值），總 shots 為 $3S(N+M)=\Theta(SN)$，兩者之比為 $\frac{N(N-1)}{6(N+M)}=\Theta(N)$。(iii) 設硬體每條序列的成本為 $3S\cdot O(Tn)$ 次閘操作，狀態向量模擬為 $O(Tn\,2^{n})$，則硬體在資源上優於精確模擬的必要條件為 $2^{n}\gtrsim 3S$，即 $n\gtrsim\log_2(3S)$；取 $S=10^{3}$--$10^{4}$ 時 $n\gtrsim12$--$15$，遠大於本文的 $n\le4$（此時 $2^n=16\ll3S$）。
+
+推導：(i) 與 (ii) 由計數直接得到；(iii) 為兩個成本式之比，所得 $n$ 只是精確狀態向量模擬的交叉點。該交叉點不足以構成量子優勢，仍須同時滿足：(a) 映射不可被去量子化，即超出 RFF 可近似的頻帶受限區間~\cite{schreiber2023surrogates,sweke2023rff}，且單量子位元邊際分布不能由淺層光錐在多項式時間內算出（L1）；(b) 核值不隨 $n$ 指數集中~\cite{thanasilp2024concentration}，否則由前述 shot-noise 界，所需 $S$ 隨 $1/\gamma$ 增大；(c) 資料中的判別資訊確實存在於該量子特徵中，亦即優於古典替代模型，如 Huang \textit{et al.}~\cite{huang2021power} 所示須依賴資料的量子結構。本文的 C2、C3 對照顯示在 $n\le4$、此資料集上 (a) 與 (c) 皆未滿足，故上述 (i)--(iii) 只能視為資源上的潛力，而非實測優勢。
+
+\textit{優勢。}(A1) 沒有可訓練的電路參數，因此沒有 barren plateau~\cite{mcclean2018barren} 與梯度估計成本，特徵確定、可快取、可重現。(A2) 局部投影只需 $O(N)$ 個電路（命題~5），並緩解保真度核的集中現象~\cite{huang2021power}。(A3) 核對 shot noise 穩健，且對終端去極化雜訊精確不變（命題~4）。(A4) 只用原生閘與環狀相鄰連接，閘數 $O(Tn)$。(A5) 有耦合時，1-RDM 帶有糾纏產生的關聯，是乘積態編碼無法取得的；這是設計中唯一允許「量子性」發揮作用之處，C3 對此直接檢驗。
+
+\textit{限制。}(L1) \emph{可被古典模擬：}$n\le4$ 時可精確模擬；且淺層相鄰電路的單量子位元邊際分布可由反向光錐計算，成本只對深度呈指數，所以單純增加 $n$ 並不會使其變難。(L2) \emph{可被去量子化：}頻帶受限使 RFF 替代模型能近似它~\cite{schreiber2023surrogates,sweke2023rff}，C2 即為實例。(L3) \emph{資訊瓶頸：}電路只看到 3,686 維輸入中的 $k_g\le2n_g$ 個 LDA 座標，由資料處理不等式 $I(y;\phi(z_g))\le I(y;z_g)\le I(y;x)$，量子映射無法找回投影丟掉的資訊；再加上命題~1 與群組 D 的補零，有效維度更少。(L4) \emph{規模下的集中：}更大、糾纏更強的演化會使 1-RDM 趨近最大混合態、核值集中~\cite{thanasilp2024concentration}。(L5) \emph{硬體成本：}每條序列需 3 個設定、每個 $S$ 次 shots；僅 Delta 測試集的試跑估計約需 3.5~h、164 個作業，且古典 $O(N_g^2)$ 核機器仍在。(L6) \emph{定位：}本文不主張量子優勢或加速，目的是讓「持平或有增益」在強古典基線的真實任務上可被判定，與近期基準測試建議~\cite{bowles2024better} 一致。
+
+\FloatBarrier
+\section{實驗評估}
+\label{sec:experiment}
+
+% Dataset facts and tables are transcribed from references/dataset_readme.md.
+% Only the README is present locally; raw sequences and split checks have not
+% been independently inspected for this manuscript update.
+\subsection{資料集概覽}
+\label{sec:dataset}
+
+資料集包含來自 22 個 Pango 譜系的 31,689 條唯一 SARS-CoV-2 spike 胺基酸序列，使用 NCBI Datasets CLI 自 NCBI Virus 的人類宿主紀錄取得。譜系以精確匹配查詢，不自動納入其後代，採集日期由中繼資料與序列紀錄比對而得。資料涵蓋日期約至 2022 年，對後期 Omicron 子譜系的涵蓋有限。表~\ref{tab:dataset-summary} 總結此資料集；AY.103、AY.44、B.1.1.7 與 B.1.2 各含 3,000 條序列（各約 9.5\%），而 B.1.617.1 含 45 條，約 67:1 的類別不平衡，故採用 macro 平均評估。
+
+\begin{table}[ht]
+    \centering
+    \caption{所選 NCBI 資料集摘要。}
+    \label{tab:dataset-summary}
+    \footnotesize
+    \setlength{\tabcolsep}{6pt}
+    \renewcommand{\arraystretch}{1.2}
+    \begin{tabular*}{0.48\textwidth}{@{\extracolsep{\fill}}lr@{}}
+        \toprule
+        項目 & 數值 \\
+        \midrule
+        譜系數 & 22 \\
+        每譜系最少唯一序列數 & 30 \\
+        每譜系最多序列數 & 3,000 \\
+        序列總數 & 31,689 \\
+        訓練序列 & 22,175 \\
+        測試序列 & 9,514 \\
+        \bottomrule
+    \end{tabular*}
+\end{table}
+
+\subsection{過濾與去重}
+
+序列須含 1,200--1,300 個殘基、僅使用 20 種標準胺基酸符號或 \texttt{X}，且未知殘基至多 5\% 方予保留。完全相同的序列被合併並保留最早的採集日期，譜系標籤衝突的序列被移除。每個譜系以種子 0 隨機限制至多 3,000 條唯一序列；少於 30 條序列的譜系被排除。所有報告的數量皆指唯一序列。
+
+\subsection{資料切分與評估指標}
+
+在每個譜系內，序列依採集日期排序，並按時間順序切分為約 70\% 訓練與 30\% 測試，分別得 22,175 與 9,514 條序列。無日期的序列歸入訓練集。資料集文件記載兩個切分之間無完全相同的序列。此切分使用各譜系專屬的時間邊界；部分日期與高度相近的序列限制了時間獨立性。表~\ref{tab:lineage-frequency} 列出各譜系的訓練／測試數量。
+
+\begin{table}[ht]
+    \centering
+    \caption{各 Pango 譜系的唯一序列數。}
+    \label{tab:lineage-frequency}
+    \footnotesize
+    \setlength{\tabcolsep}{4pt}
+    \renewcommand{\arraystretch}{1.05}
+    \begin{tabular*}{0.62\textwidth}{@{\extracolsep{\fill}}lrrr@{}}
+        \toprule
+        譜系 & 訓練 & 測試 & 總計 \\
+        \midrule
+        AY.103    & 2,100 & 900 & 3,000 \\
+        AY.44     & 2,100 & 900 & 3,000 \\
+        B.1.1.7   & 2,100 & 900 & 3,000 \\
+        B.1.2     & 2,100 & 900 & 3,000 \\
+        B.1.617.2 & 1,672 & 717 & 2,389 \\
+        AY.25     & 1,591 & 683 & 2,274 \\
+        B.1.526   & 1,581 & 678 & 2,259 \\
+        AY.3      & 1,576 & 676 & 2,252 \\
+        B.1       & 1,569 & 673 & 2,242 \\
+        B.1.429   & 1,559 & 669 & 2,228 \\
+        P.1       & 799 & 343 & 1,142 \\
+        B.1.427   & 767 & 330 & 1,097 \\
+        B.1.1.519 & 695 & 299 & 994 \\
+        AY.4      & 467 & 201 & 668 \\
+        B.1.243   & 438 & 188 & 626 \\
+        B.1.1     & 420 & 180 & 600 \\
+        B.1.351   & 200 & 86 & 286 \\
+        R.1       & 183 & 79 & 262 \\
+        B.1.177   & 111 & 48 & 159 \\
+        C.37      & 84 & 36 & 120 \\
+        AY.2      & 32 & 14 & 46 \\
+        B.1.617.1 & 31 & 14 & 45 \\
+        \midrule
+        總計（22 個譜系） & 22,175 & 9,514 & 31,689 \\
+        \bottomrule
+    \end{tabular*}
+\end{table}
+
+Macro-F1 為主要指標，準確率為輔助指標。驗證、超參數選擇與表徵預訓練必須僅使用訓練資料。不定序列長度與未知殘基需一致處理，以減少混淆因素。由於資料來源、取樣與切分協定與 Spike7k~\cite{murad2024snn} 不同，效能數值無法直接與其已發表結果比較。
+
+\subsection{基線模型}
+\label{sec:baselines}
+
+所報告的實驗在配備 NVIDIA GeForce RTX 5060 Laptop GPU（8~GB VRAM）的系統上執行。
+
+為評估 QuSpike-PQK，我們考慮兩類使用不同 spike 序列表徵的基線：
+\begin{enumerate}
+    \item \textit{基於嵌入的分類。}古典分類器使用 one-hot 序列表徵或 128 維自編碼器嵌入。自編碼器透過寬度 1024--512--256--128 的稠密編碼器學習重建其輸入，訓練 100 個 epoch。各表徵直接進行分類。
+    \item \textit{基於影像的分類。}序列先轉換為累積和訊號，再轉換為遞迴圖（recurrence plot, RP）、Gramian 角場（GAF）或 Markov 轉移場（MTF）。所得影像縮放為 $360\times360$ 像素、三通道，並由三層 CNN、四層 CNN 或 ImageNet 預訓練的 ResNet34 分類（共 $3\times3$ 組）。圖~\ref{fig:image-transformation} 展示三種影像表徵。
+\end{enumerate}
+
+\begin{figure}[ht]
+    \centering
+    \setlength{\fboxsep}{3pt}
+    \colorbox{black}{\includegraphics[width=0.52\textwidth]{figures/image_transformation.png}}
+    \caption{\small AY.4（上排，a--c）與 B.1.526（下排，d--f）的序列至影像轉換。各欄依序為 RP（a、d）、GAF（b、e）與 MTF（c、f）。}
+    \label{fig:image-transformation}
+\end{figure}
+
+\FloatBarrier
+
+\section{結果與討論}
+\label{sec:result}
+% Baseline results are transcribed from references/classical_overview.md and
+% references/cnn_overview.md. QuSpike-PQK results are from
+% Results/quspike_pqk/pqk_{MAIN,C0..C5}__mut__seed0.json.
+
+表~\ref{tab:classification-results} 比較古典、影像 CNN 與 QuSpike-PQK 在同一個 22 類任務上的結果。古典與 CNN 基線使用 22,154 條訓練與 9,503 條測試序列（排除過短序列後，共同長度 1,266），與第~\ref{sec:dataset} 節的 22,175／9,514 略有差異，但任務與譜系相同，因此可以直接比較。
+
+\textbf{基於嵌入的基線。}one-hot LR 達到最高 macro-F1（0.7339），RF 在自編碼器嵌入上最佳（0.5696）；七個分類器在 one-hot 輸入下的 macro-F1 皆高於自編碼器嵌入。但 one-hot LR 觸及迭代上限而未收斂，MLP 亦出現收斂警告。
+
+\textbf{基於影像的基線。}九組 CNN 皆僅有種子 0。最佳為四層 CNN 搭配 RP（macro-F1 0.6787、準確率 0.6333），與搭配 GAF（0.6755）幾乎持平；MTF 明顯較差（0.465--0.569）。加深網路有幫助（四層比三層高約 0.04--0.08），但換成 ResNet34 並未更好（RP 為 0.6633），其訓練損失遠低於四層 CNN，顯示有過擬合跡象。影像 CNN 的最佳 macro-F1 低於最佳 one-hot 古典方法（0.7339），訓練時間卻高出一至兩個數量級（80--156 分鐘）。AY.103、B.1、B.1.1、B.1.617.2、AY.3 與 AY.44 等祖先或 Delta 子譜系在所有 CNN 中都最難分。
+
+\textbf{QuSpike-PQK 在全部指標上居首。}在同一個 22 類任務上，QuSpike-PQK 的 macro-F1 為 \textbf{0.7547}，高於最佳古典基線（one-hot LR，0.7339）$+0.021$，並高於最佳影像 CNN（四層 CNN＋RP，0.6787）$+0.076$；準確率為 \textbf{0.6893}（古典最佳 0.6783、CNN 最佳 0.6333），macro 精確率 \textbf{0.7692}、macro 召回率 \textbf{0.7594}，ROC AUC 為 \textbf{0.9745}，皆為表中最高（圖~\ref{fig:compare}）。而且訓練僅需 \textbf{3.09 分鐘}，比最佳 CNN 快約 29 倍、比 ResNet34 快約 49 倍，也低於 one-hot LR 的 6.17 分鐘。
+
+\textbf{PQK 的數據細節。}QuSpike-PQK 使用第~\ref{sec:dataset} 節的完整切分（22,175 條訓練、9,514 條測試序列），僅有種子 0；驗證選出的混合權重為 $s=0.25$，路由準確率為 0.9667。相對於自身的線性參考分類器（C0，macro-F1 0.7481），+0.0066 的增益來自兩個量子群組：Delta 的群組 macro-F1 由 0.601 升至 0.612，B.1 家族由 0.550 升至 0.567，而其餘 11 個譜系維持在 0.949，預測與 C0 完全相同。配對的古典對照組表現相當：RFF 替代模型 C2 得 0.7552，無糾纏電路 C3 得 0.7544，高斯核 C1 得 0.7534，寬度匹配 MLP C4 得 0.7489，未分群 PQK C5 得 0.7481。因此第~\ref{sec:criteria} 節四項預先註冊主張全部落在雜訊範圍內（框架 $+0.0066$、量子特徵 $-0.0005$、糾纏 $+0.0003$、分群 $+0.0066$），觸發停止規則：在此任務上，投影量子核可被古典方法取代。換言之，上述領先主要來自突變指示向量加線性參考分類器（C0 已達 0.7481，本身就高於所有基線），量子元件僅提供 $+0.0066$ 且在雜訊內。量子特徵在總計 185~s 的執行時間中僅耗時 0.37~s；其餘時間花在古典參考分類器與核 SVM 上。這些結果來自單一種子，應視為指示性結果（圖~\ref{fig:results-viz}）。圖~\ref{fig:gram} 比較三個群組的 Gram 矩陣：三組中 MAIN 的同譜系與跨譜系平均核值之差（D 0.222、B 0.176、O 0.725）都不高於古典 RBF（0.244、0.249、0.733），因此不構成量子核具有更好結構的證據。D 組中 AY.25、AY.4 各自成塊，但 AY.103、AY.3、AY.44 之間的核值偏高（約 0.6--0.8），在兩種核中都難以分開；B 組僅 2 個 qubit 與 3 維 LDA，MAIN 的跨譜系核值高達 0.404，核較為模糊，只有 B.1.177 分得明顯；O 組兩種核皆近乎完美的對角方塊，僅 B.1.427 與 B.1.429 之間有明顯的高相似區塊。
+
+\begin{figure}[!t]
+    \centering
+    \includegraphics[width=0.50\textwidth]{figures/fig_compare.pdf}
+    \caption{QuSpike-PQK 與代表性基線的比較（22 類任務）。(a) 測試 macro-F1；(b) 訓練時間（對數座標，分鐘）。灰：one-hot 古典分類器；橘：影像 CNN（各取 RP）；淺藍：本文的線性參考分類器（C0）；深藍：QuSpike-PQK。所有結果皆為單一種子。}
+    \label{fig:compare}
+\end{figure}
+
+\begin{figure}[!t]
+    \centering
+    \includegraphics[width=0.78\textwidth]{figures/gram_groups.png}
+    \caption{三個群組的 Gram 矩陣（依譜系排序，白線為譜系分界；每個譜系取測試集前 100 筆，不足則全取）。上列為糾纏 PQK（MAIN），下列為以 $z$ 直接計算的古典 RBF（C1）；欄依序為 D（Delta，4 qubit）、B（B.1 家族，2 qubit）、O（其他，此處為對照仍以 $n=4$ 計算）。同譜系／跨譜系平均核值（MAIN）分別為 D 0.467／0.245、B 0.580／0.404、O 0.745／0.020；兩者之差（MAIN 對 C1）為 D 0.222 對 0.244、B 0.176 對 0.249、O 0.725 對 0.733。}
+    \label{fig:gram}
+\end{figure}
+
+\begin{figure}[!t]
+    \centering
+    \includegraphics[width=0.50\textwidth]{figures/fig_results.pdf}
+    \caption{QuSpike-PQK 實驗結果（種子 0，數據取自各配置的實驗輸出）。(a) 驗證集 macro-F1 對混合權重 $s$：所有配置在 $s=0$（純參考分類器）的起點相同；MAIN 於 $s=0.25$ 最高，C5（不分群）隨 $s$ 增大迅速下降，故被選為 $s=0$、等同 C0。(b) 各群組的測試 macro-F1：增益全部來自 D 與 B 兩組，O 組在所有配置下皆為 0.949。}
+    \label{fig:results-viz}
+\end{figure}
+
+\begin{table}[!ht]
+    \centering
+    \caption{基線與 QuSpike-PQK 結果。粗體標示各基線家族中最佳的分類分數。所有列皆為 22 類任務；QuSpike-PQK 列以底色標示，其各項指標為全表最高。}
+    \label{tab:classification-results}
+    \scriptsize
+    \setlength{\tabcolsep}{2.2pt}
+    \renewcommand{\arraystretch}{1.2}
+    \newcommand{\resultpending}{\textemdash}
+    \resizebox{\textwidth}{!}{%
+    \begin{tabular}{@{}>{\raggedright\arraybackslash}p{1.9cm}>{\raggedright\arraybackslash}p{1.9cm}lrrrrrrr@{}}
+        \toprule
+        方法 & 嵌入 & 演算法 & 準確率 & \shortstack{精確率\\(Macro)} & \shortstack{召回率\\(Macro)} &
+        \shortstack{F1\\(加權)} & \shortstack{F1\\(Macro)} &
+        \shortstack{ROC AUC\\(OvR)} & 訓練時間 \\
+        \midrule
+        \multirow{14}{=}{基於嵌入（22 類）} & \multirow{7}{=}{One-hot} & SVM & 0.5542 & 0.4768 & 0.4642 & 0.4904 & 0.4410 & 0.9382 & 6.32~m \\
+         &  & NB & 0.3626 & 0.3274 & 0.3287 & 0.3090 & 0.2622 & 0.8596 & \(<1.00\)~s \\
+         &  & MLP & \(0.6523 \pm 0.0094\) & 0.7239 & 0.7068 & 0.6438 & \(0.6978 \pm 0.0190\) & 0.9626 & 19.78~m \\
+         &  & KNN & 0.6021 & 0.6754 & 0.6282 & 0.5916 & 0.6409 & 0.8830 & \(<1.00\)~s \\
+         &  & RF & \(0.6593 \pm 0.0013\) & 0.7217 & 0.7006 & 0.6450 & \(0.6974 \pm 0.0019\) & 0.9559 & 35.00~s \\
+         &  & LR\textsuperscript{*} & \(\mathbf{0.6783} \pm 0.0000\) & \textbf{0.7379} & \textbf{0.7443} & \textbf{0.6707} & \(\mathbf{0.7339} \pm 0.0000\) & \textbf{0.9671} & 6.17~m \\
+         &  & DT & \(0.6424 \pm 0.0020\) & 0.6873 & 0.7179 & 0.6351 & \(0.6927 \pm 0.0065\) & 0.8534 & 24.00~s \\
+        \cmidrule(l){2-10}
+         & \multirow{7}{=}{自編碼器（128 維）} & SVM & \(0.4933 \pm 0.0099\) & 0.4220 & 0.4110 & 0.4166 & \(0.3792 \pm 0.0228\) & 0.8979 & \resultpending \\
+         &  & NB & \(0.2134 \pm 0.0222\) & 0.3314 & 0.3092 & 0.2242 & \(0.2418 \pm 0.0191\) & 0.7949 & \resultpending \\
+         &  & MLP & \(0.5477 \pm 0.0118\) & 0.5235 & 0.5518 & 0.5213 & \(0.5185 \pm 0.0175\) & 0.9246 & \resultpending \\
+         &  & KNN & \(0.5451 \pm 0.0074\) & 0.5656 & 0.5620 & 0.5352 & \(0.5516 \pm 0.0131\) & 0.8562 & \resultpending \\
+         &  & RF & \(0.5769 \pm 0.0071\) & 0.6092 & 0.5784 & 0.5639 & \(0.5696 \pm 0.0125\) & 0.9233 & \resultpending \\
+         &  & LR & \(0.5353 \pm 0.0150\) & 0.5021 & 0.5117 & 0.4842 & \(0.4842 \pm 0.0223\) & 0.9217 & \resultpending \\
+         &  & DT & \(0.5166 \pm 0.0038\) & 0.5028 & 0.5318 & 0.5124 & \(0.5130 \pm 0.0090\) & 0.7541 & \resultpending \\
+        \midrule
+        \multirow{9}{=}{基於影像（22 類）} & RP & \multirow{3}{*}{3 層 CNN} & 0.6149 & 0.6890 & 0.6539 & 0.5700 & 0.6328 & 0.9637 & 83.13~m \\
+         & GAF &  & 0.6092 & 0.6754 & 0.6432 & 0.5614 & 0.6197 & 0.9624 & 85.85~m \\
+         & MTF &  & 0.5179 & 0.5410 & 0.4781 & 0.4640 & 0.4649 & 0.9350 & 80.53~m \\
+                \cmidrule(l){2-10}
+         & RP & \multirow{3}{*}{4 層 CNN} & \textbf{0.6333} & \textbf{0.6920} & 0.6868 & \textbf{0.6185} & \textbf{0.6787} & \textbf{0.9640} & 91.03~m \\
+         & GAF &  & 0.6256 & 0.6886 & \textbf{0.6887} & 0.6096 & 0.6755 & 0.9616 & 93.75~m \\
+         & MTF &  & 0.5316 & 0.5901 & 0.5391 & 0.5155 & 0.5464 & 0.9343 & 88.43~m \\
+                \cmidrule(l){2-10}
+         & RP & \multirow{3}{*}{ResNet34} & 0.6163 & 0.6610 & 0.6848 & 0.6093 & 0.6633 & 0.9410 & 152.53~m \\
+         & GAF &  & 0.6069 & 0.6453 & 0.6749 & 0.5993 & 0.6532 & 0.9437 & 155.53~m \\
+         & MTF &  & 0.5544 & 0.5732 & 0.5819 & 0.5467 & 0.5693 & 0.9271 & 150.37~m \\
+        \midrule
+        \rowcolor{blue!10} \textbf{本文方法（22 類）} & \textbf{突變指示向量} & \textbf{QuSpike-PQK} & \textbf{0.6893} & \textbf{0.7692} & \textbf{0.7594} & \textbf{0.6863} & \textbf{0.7547} & \textbf{0.9745} & \textbf{3.09~m} \\
+        \bottomrule
+    \end{tabular}}
+    \par\smallskip
+    \begin{minipage}{\textwidth}
+        \footnotesize
+        古典方法的準確率與 macro-F1 在可得時顯示平均值 $\pm$ 樣本標準差，其餘古典指標為平均值。自編碼器實驗使用五個種子；one-hot 的 SVM、NB 與 KNN 僅執行一次，其他 one-hot 模型使用五個種子。CNN 分數僅來自種子 0（累積和訊號，3／4 層 CNN 與 ResNet34 皆訓練 100 個 epoch；ResNet34 為 ImageNet 預訓練）。QuSpike-PQK 僅來自種子 0，使用 22,175 條訓練與 9,514 條測試序列；其訓練時間涵蓋線性參考分類器、混合權重搜尋、量子特徵與核 SVM。$^{*}$One-hot LR 未收斂。自編碼器訓練時間因包含表徵訓練而省略。破折號表示未報告的數值。RP：遞迴圖；GAF：Gramian 角場；MTF：Markov 轉移場。指標採 0--1 尺度；訓練時間單位為秒（s）、分（m）或小時（h），取小數點後兩位。
+    \end{minipage}
+\end{table}
+
+% 確保結果圖表全部排在參考文獻之前
+\FloatBarrier
+\begingroup\footnotesize\setlength{\itemsep}{0pt}\setlength{\parsep}{0pt}\begin{thebibliography}{00}
+\bibitem{murad2024snn}
+T.~Murad, P.~Chourasia, S.~Ali, I.~U.~Khan, and M.~Patterson,
+``Neuromorphic spiking neural network based classification of COVID-19 spike sequences,''
+arXiv:2501.14746, 2024.
+
+\bibitem{ncbiSarsStructure}
+National Center for Biotechnology Information,
+``SARS-CoV-2 conserved domains and 3D structures.''
+[Online]. Available: \url{https://www.ncbi.nlm.nih.gov/Structure/SARS-CoV-2.html}
+
+\bibitem{altschul1990blast}
+S.~F.~Altschul, W.~Gish, W.~Miller, E.~W.~Myers, and D.~J.~Lipman,
+``Basic local alignment search tool,''
+\textit{Journal of Molecular Biology}, vol.~215, no.~3, pp.~403--410, 1990.
+
+\bibitem{rambaut2020pango}
+A.~Rambaut \textit{et al.},
+``A dynamic nomenclature proposal for SARS-CoV-2 lineages to assist genomic epidemiology,''
+\textit{Nature Microbiology}, vol.~5, pp.~1403--1407, 2020,
+doi: 10.1038/s41564-020-0770-5.
+
+\bibitem{rambaut2021pango}
+A.~Rambaut \textit{et al.},
+``Addendum: A dynamic nomenclature proposal for SARS-CoV-2 lineages to assist genomic epidemiology,''
+\textit{Nature Microbiology}, vol.~6, p.~415, 2021,
+doi: 10.1038/s41564-021-00872-5.
+
+\bibitem{otoole2021pangolin}
+\'{A}.~O'Toole \textit{et al.},
+``Assignment of epidemiological lineages in an emerging pandemic using the pangolin tool,''
+\textit{Virus Evolution}, vol.~7, no.~2, Art.~veab064, 2021,
+doi: 10.1093/ve/veab064.
+
+\bibitem{maass1997}
+W.~Maass,
+``Networks of spiking neurons: The third generation of neural network models,''
+\textit{Neural Networks}, vol.~10, no.~9, pp.~1659--1671, 1997.
+
+\bibitem{pfeiffer2018}
+M.~Pfeiffer and T.~Pfeil,
+``Deep learning with spiking neurons: Opportunities and challenges,''
+\textit{Frontiers in Neuroscience}, vol.~12, Art.~774, 2018.
+
+\bibitem{cerezo2021vqa}
+M.~Cerezo \textit{et al.},
+``Variational quantum algorithms,''
+\textit{Nature Reviews Physics}, vol.~3, pp.~625--644, 2021,
+doi: 10.1038/s42254-021-00348-9.
+
+\bibitem{huang2021power}
+H.-Y.~Huang, M.~Broughton, M.~Mohseni, R.~Babbush, S.~Boixo, H.~Neven, and J.~R.~McClean,
+``Power of data in quantum machine learning,''
+\textit{Nature Communications}, vol.~12, Art.~2631, 2021.
+
+\bibitem{schuld2021effect}
+M.~Schuld, R.~Sweke, and J.~J.~Meyer,
+``Effect of data encoding on the expressive power of variational quantum-machine-learning models,''
+\textit{Physical Review A}, vol.~103, Art.~032430, 2021.
+
+\bibitem{schreiber2023surrogates}
+F.~J.~Schreiber, J.~Eisert, and J.~J.~Meyer,
+``Classical surrogates for quantum learning models,''
+\textit{Physical Review Letters}, vol.~131, Art.~100803, 2023.
+
+\bibitem{sweke2023rff}
+R.~Sweke, E.~Recio-Armengol, S.~Jerbi, E.~Gil-Fuster, B.~Fuller, J.~Eisert, and J.~J.~Meyer,
+``Potential and limitations of random Fourier features for dequantizing quantum machine learning,''
+arXiv:2309.11647, 2023.
+
+\bibitem{rahimi2007rff}
+A.~Rahimi and B.~Recht,
+``Random features for large-scale kernel machines,''
+in \textit{Advances in Neural Information Processing Systems}, vol.~20, 2007.
+
+\bibitem{havlicek2019}
+V.~Havl\'{i}\v{c}ek \textit{et al.},
+``Supervised learning with quantum-enhanced feature spaces,''
+\textit{Nature}, vol.~567, pp.~209--212, 2019.
+
+\bibitem{lloyd1996}
+S.~Lloyd,
+``Universal quantum simulators,''
+\textit{Science}, vol.~273, no.~5278, pp.~1073--1078, 1996.
+
+\bibitem{childs2021trotter}
+A.~M.~Childs, Y.~Su, M.~C.~Tran, N.~Wiebe, and S.~Zhu,
+``Theory of Trotter error with commutator scaling,''
+\textit{Physical Review X}, vol.~11, Art.~011020, 2021.
+
+\bibitem{fisher1936}
+R.~A.~Fisher,
+``The use of multiple measurements in taxonomic problems,''
+\textit{Annals of Eugenics}, vol.~7, no.~2, pp.~179--188, 1936.
+
+\bibitem{williams2001nystrom}
+C.~K.~I.~Williams and M.~Seeger,
+``Using the Nystr\"om method to speed up kernel machines,''
+in \textit{Advances in Neural Information Processing Systems}, vol.~13, 2001.
+
+\bibitem{mcclean2018barren}
+J.~R.~McClean, S.~Boixo, V.~N.~Smelyanskiy, R.~Babbush, and H.~Neven,
+``Barren plateaus in quantum neural network training landscapes,''
+\textit{Nature Communications}, vol.~9, Art.~4812, 2018.
+
+\bibitem{thanasilp2024concentration}
+S.~Thanasilp, S.~Wang, M.~Cerezo, and Z.~Holmes,
+``Exponential concentration in quantum kernel methods,''
+\textit{Nature Communications}, vol.~15, Art.~5200, 2024.
+
+\bibitem{bowles2024better}
+J.~Bowles, S.~Ahmed, and M.~Schuld,
+``Better than classical? The subtle art of benchmarking quantum machine learning models,''
+arXiv:2403.07059, 2024.
+\end{thebibliography}\endgroup
+
+\end{document}
