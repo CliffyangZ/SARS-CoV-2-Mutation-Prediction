@@ -2,9 +2,6 @@
 
 用於 **SARS-CoV-2 Spike 胺基酸譜系分類**的投影量子核（projected quantum kernel, PQK）專家模型。
 
-- 作者：楊欣澤　｜　指導老師：查怡
-- 論文：[`Paper/QuSpike-PQK-cn.tex`](Paper/QuSpike-PQK-cn.tex)（中文）、[`Paper/QuSpike-PQK.tex`](Paper/QuSpike-PQK.tex)（英文）
-
 ## 摘要
 
 本文以 SARS-CoV-2 spike 胺基酸序列的 **22 類 Pango 譜系分類**檢驗：固定的量子特徵映射，能否提供介面相同之古典替代方案以外的判別資訊？
@@ -47,50 +44,3 @@
 - 電路無可訓練參數；PQK 只需 **O(N)** 電路（非保真度核的 O(N²)）  
 - 對照：C0 參考、C1 高斯核、C2 RFF、C3 無耦合、C4 MLP、C5 不分群  
 
-## 儲存庫結構
-
-| 路徑 | 說明 |
-|------|------|
-| `Paper/` | 中英文稿、圖、編譯設定 |
-| `Data/spike-lineage/` | 22 類譜系資料（建議 `dataset_v2.tsv`） |
-| `Data/spike-protein/` | Spike AA 靜態庫（ViralEntropR / Zenodo） |
-| `Research/QuSpike_PQK/` | Spike-PQK 實驗管線 |
-| `Research/lineage_baselines/` | 古典／影像／訊號基線 |
-| `Results/quspike_pqk*` | PQK 實驗輸出 |
-| `Results/lineage_baselines*` | 基線實驗輸出 |
-| `specs/` | 功能規格與設計紀錄 |
-
-## 快速開始
-
-```bash
-# 環境（範例）
-conda activate qml_env
-pip install -r requirements-extra.txt   # 依專案需求
-
-# Spike-PQK 主實驗
-python -m Research.QuSpike_PQK.run \
-  --data Data/spike-lineage/dataset_v2.tsv \
-  --out Results/quspike_pqk \
-  --seeds 0
-
-# 古典／影像基線（22 類）
-python -m Research.lineage_baselines.run \
-  --data Data/spike-lineage/dataset_v2.tsv \
-  --out Results/lineage_baselines_v2 \
-  --group classical --seeds 0 1 2
-```
-
-編譯論文（於 `Paper/`）：
-
-```bash
-latexmk -xelatex QuSpike-PQK-cn.tex   # 中文
-latexmk -pdf QuSpike-PQK.tex          # 英文
-```
-
-詳見 [`Paper/README.md`](Paper/README.md)、[`Data/spike-lineage/README.md`](Data/spike-lineage/README.md)。
-
-## 補充說明
-
-- 所有 Spike-PQK 主結果目前為**單一種子**，應視為指示性結果。  
-- 程式與補充資料：見論文補充資料一節（GitHub 連結以稿件為準）。  
-- 本專案另含 StyleGAN／JEPA 等探索路徑，與 Spike-PQK 主線分開存放於 `Research/`、`Results/`。
