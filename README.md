@@ -2,6 +2,12 @@
 
 用於 **SARS-CoV-2 Spike 胺基酸譜系分類**的投影量子核（projected quantum kernel, PQK）專家模型。
 
+用 QuSpike 本地開前端，測試你自己的胺基酸序列分類任務 !!
+```bash
+pip install quspike
+quspike demo
+```
+
 ## 摘要
 
 本文以 SARS-CoV-2 spike 胺基酸序列的 **22 類 Pango 譜系分類**檢驗：固定的量子特徵映射，能否提供介面相同之古典替代方案以外的判別資訊？
