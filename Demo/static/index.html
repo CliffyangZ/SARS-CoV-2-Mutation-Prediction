@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>即時譜系預測器</title>
+<style>
+:root{--bg:#fafafa;--fg:#1c1c1e;--mut:#6b6b70;--card:#fff;--line:#e2e2e6;--acc:#2f5fd0;--warn:#b45309;--err:#b91c1c}
+@media (prefers-color-scheme:dark){:root{--bg:#141416;--fg:#ececf0;--mut:#9a9aa2;--card:#1d1d20;--line:#333338;--acc:#7da2ff;--warn:#f0b35a;--err:#ff8a8a}}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,sans-serif}
+main{max-width:860px;margin:0 auto;padding:16px}
+.hero{display:flex;align-items:center;gap:16px;margin-bottom:4px}
+.virus{flex:none;width:96px;aspect-ratio:345/350;overflow:hidden}.virus img{width:100%;height:100%;object-fit:cover;object-position:left;animation:spin 60s linear infinite;transform-origin:50% 50%}
+@keyframes spin{to{transform:rotate(360deg)}}@media (prefers-reduced-motion:reduce){.virus img{animation:none}}
+h1{font-size:1.3rem;margin:.2em 0}.sub{color:var(--mut);margin:0 0 12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin:12px 0}
+textarea{width:100%;box-sizing:border-box;min-height:130px;font:13px ui-monospace,monospace;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:8px}
+.row{display:flex;flex-wrap:wrap;gap:16px;align-items:center;margin-top:10px}
+button{background:var(--acc);color:#fff;border:0;border-radius:8px;padding:8px 18px;font-size:15px;cursor:pointer}
+table{width:100%;border-collapse:collapse}th,td{padding:5px 8px;text-align:right;border-bottom:1px solid var(--line)}th:nth-child(2),td:nth-child(2){text-align:left}
+.pos{color:#15803d}.neg{color:var(--err)}.warn{color:var(--warn)}.err{color:var(--err)}.mut{color:var(--mut);font-size:13px}
+.badge{display:inline-block;padding:2px 10px;border-radius:99px;background:var(--acc);color:#fff;font-weight:600}
+.tree-wrap{overflow-x:auto}svg text{fill:var(--fg);font:11px system-ui,sans-serif}svg .dim{fill:var(--mut)}
+.legend span{display:inline-block;margin-right:14px;font-size:13px}.legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px;vertical-align:middle}
+.bar{height:8px;background:var(--line);border-radius:4px;overflow:hidden;margin:2px 0 6px}.bar i{display:block;height:100%;background:var(--acc)}
+</style></head><body><main>
+<div class="hero"><div class="virus"><img src="/static/virus.svg" alt="SARS-CoV-2 病毒結構示意圖（未按比例）"></div><div><h1>即時譜系預測器</h1>
+<p class="sub">貼上 spike 胺基酸序列（或 FASTA、突變清單，例如 <code>L452R, T478K, del69-70</code>）。</p></div></div>
+<div class="card">
+<textarea id="inp" placeholder="MFVFLVLLPLVSSQCV… 或 L452R, T478K, D614G"></textarea>
+<div class="row">
+<label>Top-k <input id="k" type="number" min="1" max="22" value="5" style="width:60px"></label>
+<label>專家權重 s <input id="s" type="range" min="0" max="4" step="0.05" value="0.25"> <b id="sv">0.25</b></label>
+<button id="go">預測</button></div></div>
+<div id="out"></div>
+<div class="card" id="treecard"><b>譜系樹</b> <span class="mut">光點沿演化路徑游向判定的譜系；節點大小＝機率</span><div class="legend" style="margin:6px 0"><span><i style="background:#d9485f"></i>D 組（Delta）</span><span><i style="background:#2f5fd0"></i>B 組（B.1 家族）</span><span><i style="background:#8a8a94"></i>O 組（其他）</span><span>◯ 虛線環＝僅參考分類器的判定</span></div><div class="tree-wrap"><svg id="tree" role="img" aria-label="Pango 譜系樹"></svg></div></div>
+<p class="mut" id="disc"></p>
+<script>
+const $=id=>document.getElementById(id);let sDefault=null;
+fetch('/api/health').then(r=>r.json()).then(h=>{if(h.ready){sDefault=h.s_default;$('s').value=sDefault;$('sv').textContent=sDefault}else $('out').innerHTML='<p class="err">'+h.error+'</p>'});
+$('s').oninput=()=>{$('sv').textContent=$('s').value;if($('inp').value.trim())run()};
+$('go').onclick=()=>run(true);
+function esc(t){return String(t).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}
+async function run(scroll){
+ const o=$('out');o.innerHTML='<p class="mut">計算中…</p>';
+ const r=await fetch('/api/predict',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({input:$('inp').value,k:22,s:parseFloat($('s').value)})});
+ const d=await r.json();
+ if(!r.ok){o.innerHTML='<div class="card err"><b>'+esc(d.error)+'</b><ul>'+(d.details||[]).map(x=>'<li>'+esc(x.item)+'：'+esc(x.problem)+'</li>').join('')+'</ul></div>';return}
+ const R=d.routing;
+ let h='<div class="card"><b>路由群組</b> <span class="badge">'+R.group+'</span> '+(R.expert_applied?'專家已套用':'專家未套用（等同參考分類器）')+
+  Object.entries(R.probs).map(([g,v])=>'<div>'+g+' '+v.toFixed(3)+'<div class="bar"><i style="width:'+(v*100)+'%"></i></div></div>').join('')+'</div>';
+ h+='<div class="card"><b>Top-k 譜系</b><table><tr><th>#</th><th>譜系</th><th>機率</th><th>參考機率</th><th>殘差 (s·f)</th><th>參考名次</th></tr>'+
+  d.top_k.slice(0,parseInt($('k').value)||5).map(t=>'<tr><td>'+t.rank+'</td><td>'+esc(t.lineage)+'</td><td>'+t.prob.toFixed(4)+'</td><td>'+t.ref_prob.toFixed(4)+'</td><td class="'+(t.residual>1e-9?'pos':t.residual<-1e-9?'neg':'')+'">'+(t.residual>=0?'+':'')+t.residual.toFixed(4)+'</td><td>'+t.ref_rank+'</td></tr>').join('')+'</table>'+
+  '<p>'+(d.top1_changed_by_expert?'<b>專家改變了 Top-1。</b>':'專家未改變 Top-1。')+' s = '+d.s_used+'</p></div>';
+ const w=d.parsed.warnings.concat(d.confidence_note?[d.confidence_note]:[]);
+ if(w.length)h+='<div class="card warn">'+w.map(x=>'<div>⚠ '+esc(x)+'</div>').join('')+'</div>';
+ h+='<p class="mut">突變數 '+d.parsed.n_mutations+(d.parsed.n_out_of_vocab?'，詞彙外 '+d.parsed.n_out_of_vocab:'')+'</p>';
+ o.innerHTML=h;drawResult(d);if(scroll===true)$('treecard').scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'center'});$('disc').textContent=d.disclaimer}
+
+/* ---- 譜系樹 ---- */
+const TREE={n:'B',c:[{n:'B.1',c:[{n:'B.1.1',c:[{n:'B.1.1.7'},{n:'B.1.1.519'},{n:'B.1.1.1',c:[{n:'C.37'}]},{n:'B.1.1.28',c:[{n:'P.1'}]},{n:'B.1.1.316',c:[{n:'R.1'}]}]},
+ {n:'B.1.177'},{n:'B.1.2'},{n:'B.1.243'},{n:'B.1.351'},{n:'B.1.427'},{n:'B.1.429'},{n:'B.1.526'},{n:'B.1.617.1'},
+ {n:'B.1.617.2',c:[{n:'AY.103'},{n:'AY.2'},{n:'AY.25'},{n:'AY.3'},{n:'AY.4'},{n:'AY.44'}]}]}]};
+const GCOL={D:'#d9485f',B:'#2f5fd0',O:'#8a8a94'};
+const grpOf=n=>(n==='B.1.617.2'||n.startsWith('AY.'))?'D':['B.1','B.1.1','B.1.2','B.1.177'].includes(n)?'B':'O';
+const CLASSES=new Set(['AY.103','AY.2','AY.25','AY.3','AY.4','AY.44','B.1','B.1.1','B.1.1.519','B.1.1.7','B.1.177','B.1.2','B.1.243','B.1.351','B.1.427','B.1.429','B.1.526','B.1.617.1','B.1.617.2','C.37','P.1','R.1']);
+const NS='http://www.w3.org/2000/svg',DX=118,DY=24,PADL=34,PADT=16;
+const nodes={};let leaf=0,maxD=0;
+(function lay(t,d,par){t.d=d;t.par=par;nodes[t.n]=t;maxD=Math.max(maxD,d);
+ if(t.c){t.c.forEach(c=>lay(c,d+1,t));t.y=t.c.reduce((a,c)=>a+c.y,0)/t.c.length}else t.y=leaf++;
+ t.px=PADL+d*DX;t.py=PADT+t.y*DY})(TREE,0,null);
+const SVG=$('tree');SVG.setAttribute('viewBox','0 0 '+(PADL+maxD*DX+110)+' '+(PADT*2+(leaf-1)*DY));SVG.style.width='100%';SVG.style.minWidth='640px';
+function el(tag,at,par){const e=document.createElementNS(NS,tag);for(const k in at)e.setAttribute(k,at[k]);(par||SVG).appendChild(e);return e}
+const segD=n=>{const p=n.par;return 'M'+p.px+','+p.py+'H'+(p.px+DX/2)+'V'+n.py+'H'+n.px};
+const defs=el('defs',{});const f=el('filter',{id:'glow',x:'-100%',y:'-100%',width:'300%',height:'300%'},defs);el('feGaussianBlur',{stdDeviation:'3.5'},f);
+const gL=el('g',{}),gH=el('g',{}),gN=el('g',{}),gD=el('g',{});
+(function draw(t){if(t.par)el('path',{d:segD(t),fill:'none',stroke:'var(--line)','stroke-width':1.6},gL);(t.c||[]).forEach(draw)})(TREE);
+for(const n in nodes){const t=nodes[n],cls=CLASSES.has(n);t.circ=el('circle',{cx:t.px,cy:t.py,r:cls?4:2.5,fill:cls?GCOL[grpOf(n)]:'var(--line)',opacity:cls?.55:1},gN);
+ const tx=el('text',{x:t.px+8,y:t.py+(t.c&&t.par?-8:3.5),class:cls?'':'dim'},gN);tx.textContent=n;t.txt=tx}
+let raf=0,anim=0;
+function pathTo(n){const chain=[];for(let t=nodes[n];t.par;t=t.par)chain.unshift(t);return chain.map(segD).join('')}
+function drawResult(d){
+ cancelAnimationFrame(raf);const id=++anim;gH.remove();gD.replaceChildren();SVG.insertBefore(gH,gN);gH.replaceChildren();
+ const prob={},ref={};d.top_k.forEach(t=>{prob[t.lineage]=t.prob;ref[t.lineage]=t});
+ for(const n in nodes){const t=nodes[n];if(!CLASSES.has(n))continue;const p=prob[n]||0;
+  t.circ.setAttribute('r',4+Math.sqrt(p)*13);t.circ.setAttribute('opacity',.35+.65*Math.min(1,p*2));t.txt.setAttribute('font-weight',p>.5?700:400);
+  t.txt.textContent=n+(p>=.01?'  '+(p*100).toFixed(p>=.1?0:1)+'%':'')}
+ const ranked=d.top_k.filter(t=>t.prob>=.05).slice(0,3);if(!ranked.length)ranked.push(d.top_k[0]);
+ const rr=d.top_k.reduce((a,t)=>t.ref_prob>a.ref_prob?t:a);
+ if(rr.lineage!==d.top_k[0].lineage||true){const t=nodes[rr.lineage];el('circle',{cx:t.px,cy:t.py,r:10+Math.sqrt(rr.ref_prob)*13,fill:'none',stroke:'var(--mut)','stroke-dasharray':'3 3','stroke-width':1.2},gD)}
+ const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+ const runs=ranked.map((t,i)=>{const n=nodes[t.lineage],col=GCOL[grpOf(t.lineage)],dd=pathTo(t.lineage);
+  const route=el('path',{d:dd,fill:'none',stroke:col,'stroke-width':i?1.6:3,opacity:i?.45:.9,'stroke-linecap':'round'},gH);
+  const L=route.getTotalLength();route.style.strokeDasharray=L;route.style.strokeDashoffset=reduce?0:L;
+  const halo=el('circle',{r:i?7:11,fill:col,filter:'url(#glow)',opacity:0},gD),dot=el('circle',{r:i?2.6:4.2,fill:'#fff',stroke:col,'stroke-width':1.5,opacity:0},gD);
+  const ring=el('circle',{cx:n.px,cy:n.py,r:6,fill:'none',stroke:col,'stroke-width':2,opacity:0},gD);
+  return{route,L,halo,dot,ring,n,i,dur:1700+i*300,delay:i*350}});
+ if(reduce){runs.forEach(r=>{r.ring.setAttribute('opacity',.8);r.ring.setAttribute('r',10+Math.sqrt(prob[r.n.n])*13)});return}
+ const t0=performance.now();
+ (function frame(now){if(id!==anim)return;let live=false;
+  for(const r of runs){const u=(now-t0-r.delay)/r.dur;if(u<0){live=true;continue}
+   const e=Math.min(1,u),k=1-Math.pow(1-e,3),pt=r.route.getPointAtLength(r.L*k);
+   r.route.style.strokeDashoffset=r.L*(1-k);
+   for(const c of [r.dot,r.halo]){c.setAttribute('cx',pt.x);c.setAttribute('cy',pt.y)}
+   r.dot.setAttribute('opacity',e<1?1:0);r.halo.setAttribute('opacity',e<1?.9:0);
+   if(e<1)live=true;else{const q=((now-t0-r.delay-r.dur)/1400),pulse=q%1;
+    r.ring.setAttribute('r',8+pulse*(r.i?12:22));r.ring.setAttribute('opacity',q<3?(1-pulse)*.85:(r.i?0:.55));
+    r.ring.setAttribute('r',q<3?8+pulse*(r.i?12:22):10+Math.sqrt(prob[r.n.n])*13);live=live||q<3}}
+  if(live)raf=requestAnimationFrame(frame)})(t0)}
+</script></main></body></html>
